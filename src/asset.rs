@@ -48,48 +48,45 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::state::*;
-
-//================================================================
-
 use raylib::prelude::*;
+use std::collections::HashMap;
 
 //================================================================
 
-pub trait Entity {
-    fn get_point(&mut self) -> &mut Vector3;
-    fn get_angle(&mut self) -> &mut Vector3;
-    fn get_speed(&mut self) -> &mut Vector3;
+#[derive(Default)]
+pub struct Asset {
+    pub model: HashMap<String, Model>,
+}
 
-    //================================================================
-
-    fn set_point(&mut self, value: Vector3) {
-        *self.get_point() = value;
-    }
-    fn set_angle(&mut self, value: Vector3) {
-        *self.get_angle() = value;
-    }
-    fn set_speed(&mut self, value: Vector3) {
-        *self.get_speed() = value;
-    }
-
-    //================================================================
-
-    fn draw_3d(
+impl Asset {
+    pub fn set_model(
         &mut self,
-        _state: &mut State,
-        _draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
+        handle: &mut RaylibHandle,
+        thread: &RaylibThread,
+        name: &str,
+    ) -> anyhow::Result<&Model> {
+        let mut model = handle.load_model(thread, name)?;
+
+        // create mip-map.
+        for material in model.materials_mut() {
+            for map in material.maps_mut() {
+                let texture = map.texture_mut();
+
+                if texture.id > 0 {
+                    texture.gen_texture_mipmaps();
+                    texture.set_texture_filter(thread, TextureFilter::TEXTURE_FILTER_POINT);
+                }
+            }
+        }
+
+        self.model.insert(name.to_string(), model);
+
+        self.get_model(name)
     }
-    fn draw_2d(
-        &mut self,
-        _state: &mut State,
-        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn tick(&mut self, _state: &mut State, _handle: &mut RaylibHandle) -> anyhow::Result<()> {
-        Ok(())
+
+    pub fn get_model(&self, name: &str) -> anyhow::Result<&Model> {
+        self.model.get(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_model(): Could not find asset \"{name}\"."
+        )))
     }
 }

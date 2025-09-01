@@ -48,48 +48,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::state::*;
-
-//================================================================
-
-use raylib::prelude::*;
-
-//================================================================
-
-pub trait Entity {
-    fn get_point(&mut self) -> &mut Vector3;
-    fn get_angle(&mut self) -> &mut Vector3;
-    fn get_speed(&mut self) -> &mut Vector3;
-
-    //================================================================
-
-    fn set_point(&mut self, value: Vector3) {
-        *self.get_point() = value;
-    }
-    fn set_angle(&mut self, value: Vector3) {
-        *self.get_angle() = value;
-    }
-    fn set_speed(&mut self, value: Vector3) {
-        *self.get_speed() = value;
-    }
-
-    //================================================================
-
-    fn draw_3d(
-        &mut self,
-        _state: &mut State,
-        _draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn draw_2d(
-        &mut self,
-        _state: &mut State,
-        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn tick(&mut self, _state: &mut State, _handle: &mut RaylibHandle) -> anyhow::Result<()> {
-        Ok(())
-    }
+pub struct Setting {
+    pub screen_size: (u32, u32),
 }

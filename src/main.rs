@@ -48,23 +48,20 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+mod asset;
 mod entity;
+mod physical;
 mod player;
+mod setting;
 mod state;
 
 //================================================================
 
-use crate::player::*;
 use crate::state::*;
 
 //================================================================
 
-fn main() {
-    let mut state = State::default();
-    state.entity_list.push(Box::new(Player::default()));
-
-    //================================================================
-
+fn main() -> anyhow::Result<()> {
     let (mut handle, thread) = raylib::init().size(1024, 768).title("Mettle").build();
 
     handle.set_target_fps(144);
@@ -72,5 +69,7 @@ fn main() {
 
     //================================================================
 
-    state.main(&mut handle, &thread);
+    let mut state = State::new(&mut handle, &thread)?;
+
+    state.main(&mut handle, &thread)
 }

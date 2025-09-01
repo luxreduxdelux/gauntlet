@@ -48,7 +48,10 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::asset::*;
 use crate::entity::*;
+use crate::physical::*;
+use crate::player::*;
 
 //================================================================
 
@@ -57,9 +60,11 @@ use raylib::prelude::*;
 //================================================================
 
 pub struct State {
+    pub asset: Asset,
     pub entity_list: Vec<Box<dyn Entity>>,
     pub camera_3d: Camera3D,
     pub camera_2d: Camera2D,
+    pub physical: Physical,
     pub time: f32,
     step: f32,
 }
@@ -67,18 +72,50 @@ pub struct State {
 impl State {
     pub const TIME_STEP: f32 = 1.0 / 144.0;
 
-    pub fn main(&mut self, handle: &mut RaylibHandle, thread: &RaylibThread) {
+    pub fn new(handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<Self> {
+        let mut asset = Asset::default();
+
+        asset.set_model(handle, thread, "data/level.glb")?;
+
+        let mut state = Self {
+            asset,
+            entity_list: Default::default(),
+            camera_3d: Camera3D::perspective(
+                Vector3::default(),
+                Vector3::default(),
+                Vector3::default(),
+                90.0,
+            ),
+            camera_2d: Default::default(),
+            physical: Physical::default(),
+            time: f32::default(),
+            step: f32::default(),
+        };
+
+        let player = Box::new(Player::new(&mut state)?);
+        state.entity_list.push(player);
+
+        Ok(state)
+    }
+
+    pub fn main(&mut self, handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<()> {
         while !handle.window_should_close() {
+            if handle.is_key_pressed(KeyboardKey::KEY_F1) {
+                *self = State::new(handle, thread)?;
+            }
+
             let frame_time = handle.get_frame_time().min(0.25);
 
             self.step += frame_time;
 
             while self.step >= Self::TIME_STEP {
+                self.physical.tick();
+
                 unsafe {
                     let state = self as *mut Self;
 
                     for entity in &mut self.entity_list {
-                        entity.tick(&mut *state, handle);
+                        entity.tick(&mut *state, handle)?;
                     }
                 }
 
@@ -93,13 +130,11 @@ impl State {
             {
                 let mut draw_3d = draw.begin_mode3D(self.camera_3d);
 
-                draw_3d.draw_grid(32, 1.0);
-
                 unsafe {
                     let state = self as *mut Self;
 
                     for entity in &mut self.entity_list {
-                        entity.draw_3d(&mut *state, &mut draw_3d);
+                        entity.draw_3d(&mut *state, &mut draw_3d)?;
                     }
                 }
             }
@@ -111,31 +146,16 @@ impl State {
                     zoom: 1.0,
                 });
 
-                draw_2d.draw_text("Hello, world!", 12, 12, 20, Color::BLACK);
+                unsafe {
+                    let state = self as *mut Self;
+
+                    for entity in &mut self.entity_list {
+                        entity.draw_2d(&mut *state, &mut draw_2d)?;
+                    }
+                }
             }
         }
-    }
-}
 
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            entity_list: Default::default(),
-            //camera_3d: Camera3D::perspective(
-            //    Vector3::default(),
-            //    Vector3::default(),
-            //    Vector3::default(),
-            //    f32::default(),
-            //),
-            camera_3d: Camera3D::perspective(
-                Vector3::one() * 4.0,
-                Vector3::zero(),
-                Vector3::up(),
-                90.0,
-            ),
-            camera_2d: Default::default(),
-            time: f32::default(),
-            step: f32::default(),
-        }
+        Ok(())
     }
 }
