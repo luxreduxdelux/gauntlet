@@ -52,6 +52,7 @@ use crate::asset::*;
 use crate::entity::*;
 use crate::physical::*;
 use crate::player::*;
+use crate::setting::*;
 
 //================================================================
 
@@ -61,6 +62,7 @@ use raylib::prelude::*;
 
 pub struct State {
     pub asset: Asset,
+    pub setting: Setting,
     pub entity_list: Vec<Box<dyn Entity>>,
     pub camera_3d: Camera3D,
     pub camera_2d: Camera2D,
@@ -72,13 +74,10 @@ pub struct State {
 impl State {
     pub const TIME_STEP: f32 = 1.0 / 144.0;
 
-    pub fn new(handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<Self> {
-        let mut asset = Asset::default();
-
-        asset.set_model(handle, thread, "data/level.glb")?;
-
-        let mut state = Self {
-            asset,
+    pub fn new() -> Self {
+        Self {
+            asset: Asset::default(),
+            setting: Setting::default(),
             entity_list: Default::default(),
             camera_3d: Camera3D::perspective(
                 Vector3::default(),
@@ -90,18 +89,27 @@ impl State {
             physical: Physical::default(),
             time: f32::default(),
             step: f32::default(),
-        };
+        }
+    }
 
-        let player = Box::new(Player::new(&mut state)?);
-        state.entity_list.push(player);
+    pub fn initialize(
+        &mut self,
+        handle: &mut RaylibHandle,
+        thread: &RaylibThread,
+    ) -> anyhow::Result<()> {
+        self.asset.set_model(handle, thread, "data/level.glb")?;
 
-        Ok(state)
+        let player = Box::new(Player::new(self)?);
+        self.entity_list.push(player);
+
+        Ok(())
     }
 
     pub fn main(&mut self, handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<()> {
         while !handle.window_should_close() {
             if handle.is_key_pressed(KeyboardKey::KEY_F1) {
-                *self = State::new(handle, thread)?;
+                *self = State::new();
+                self.initialize(handle, thread)?;
             }
 
             let frame_time = handle.get_frame_time().min(0.25);

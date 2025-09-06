@@ -50,6 +50,8 @@
 
 use crate::entity::*;
 use crate::state::*;
+use crate::utility::*;
+use crate::setting::*;
 
 //================================================================
 
@@ -59,71 +61,59 @@ use raylib::prelude::*;
 
 //================================================================
 
-#[derive(Default)]
-struct Camera {
-    point: Vector3,
-    angle: Vector3,
-    scale: f32,
-}
-
-impl Camera {
-    fn new(point: Vector3, angle: Vector3, scale: f32) -> Self {
-        Self {
-            point,
-            angle,
-            scale
-        }
-    }
-
-    fn blend(&mut self, camera: &Camera) {
-        self.point += (camera.point - self.point) * State::TIME_STEP * 16.0;
-        self.angle += (camera.angle - self.angle) * State::TIME_STEP * 32.0;
-        self.scale += (camera.scale - self.scale) * State::TIME_STEP * 16.0;
-    }
-}
-
-#[derive(Debug, PartialEq)]
 enum PlayerState {
-    Normal {
+    Walk {
         time: f32,
         jump: f32,
         null: f32,
     },
+    Dash {
+        time: f32,
+    },
     Duck {
         time: f32,
-        fall: f32,
+    },
+    Slam {
+        time: f32,
     },
     Wall {
         direction: f32,
         plane: Vector3,
+        ray: Vector3,
     },
 }
 
 impl Default for PlayerState {
     fn default() -> Self {
-        Self::Normal { time: 0.0, jump: 0.0, null: 0.0 }
+        Self::Walk { time: 0.0, jump: 0.0, null: 0.0 }
     }
 }
 
 impl PlayerState {
-    const DUCK_SCALE: f32 = 0.25;
-    const DUCK_SPEED: f32 = 8.00;
-    const SPEED_MIN: f32 = 0.1;
-    const SPEED_MAX: f32 = 8.0;
-    const SPEED_RISE: f32 = 4.5;
-    const SPEED_FALL: f32 = 8.0;
-    const SPEED_AIR_MIN: f32 = 0.5;
-    const SPEED_AIR_RISE: f32 = 4.0;
-    const SPEED_AIR_FALL: f32 = 8.0;
-    const SPEED_JUMP: f32 = 3.0;
+    const DUCK_SCALE            : f32 = 0.30;
+    const DUCK_SPEED            : f32 = 8.00;
+    const SPEED_MIN             : f32 = 0.10;
+    const SPEED_MAX             : f32 = 8.00;
+    const SPEED_RISE            : f32 = 4.50;
+    const SPEED_FALL            : f32 = 8.00;
+    const SPEED_AIR_MIN         : f32 = 0.50;
+    const SPEED_AIR_RISE        : f32 = 4.00;
+    const SPEED_AIR_FALL        : f32 = 8.00;
+    const SPEED_JUMP            : f32 = 3.00;
+    const WALL_PLANE_FALL_FORCE : f32 = 2.00;
+    const WALL_PLANE_JUMP_FORCE : f32 = 4.00;
+    const WALL_PLANE_FALL_TIME  : f32 = 0.00;
+    const WALL_PLANE_JUMP_TIME  : f32 = 0.10;
+    const WALL_PLANE_FALL_NULL  : f32 = 0.50;
+    const WALL_PLANE_JUMP_NULL  : f32 = 0.50;
 
-    fn get_movement_key(handle: &RaylibHandle, key_a: KeyboardKey, key_b: KeyboardKey) -> f32 {
-        if handle.is_key_down(key_a) {
+    fn get_movement_key(handle: &RaylibHandle, key_a: Input, key_b: Input) -> f32 {
+        if key_a.down(handle) {
             return Self::SPEED_MAX;
         }
 
-        if handle.is_key_down(key_b) {
-            return Self::SPEED_MAX * -1.0;
+        if key_b.down(handle) {
+            return -Self::SPEED_MAX;
         }
 
         0.0
@@ -131,7 +121,7 @@ impl PlayerState {
 
     fn tick(player: &mut Player, state: &State, handle: &RaylibHandle) {
         match player.state {
-            Self::Normal { ref mut time, ref mut jump, ref mut null } => {
+            Self::Walk { ref mut time, ref mut jump, ref mut null } => {
                 *time -= State::TIME_STEP;
                 *time  = time.max(0.0);
 
@@ -142,9 +132,9 @@ impl PlayerState {
 
                 let move_angle = Direction::new_from_angle(&Vector3::new(player.angle.x, 0.0, 0.0));
                 let move_x =
-                    move_angle.x * Self::get_movement_key(handle, KeyboardKey::KEY_W, KeyboardKey::KEY_S);
+                    move_angle.x * Self::get_movement_key(handle, state.setting.move_x_a, state.setting.move_x_b);
                 let move_z =
-                    move_angle.z * Self::get_movement_key(handle, KeyboardKey::KEY_A, KeyboardKey::KEY_D);
+                    move_angle.z * Self::get_movement_key(handle, state.setting.move_z_a, state.setting.move_z_b);
                 let move_which = move_x + move_z;
                 let move_where = move_which.normalized();
                 let move_speed = move_which.length();
@@ -161,13 +151,19 @@ impl PlayerState {
                         player.speed.y = 0.0;
                     }
 
-                    if handle.is_key_down(KeyboardKey::KEY_SPACE) {
+                    if state.setting.jump.down(handle) {
                         player.speed.y = Self::SPEED_JUMP;
                         *jump = 0.5;
                     }
 
-                    if handle.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) && *time <= 0.0 {
-                        Self::to_duck(player);
+                    if state.setting.duck.down(handle) && *time <= 0.0 {
+                        if state.setting.move_z_a.down(handle) || state.setting.move_x_b.down(handle) || state.setting.move_z_b.down(handle) {
+                            player.speed   = move_which * 0.75;
+                            player.speed.y = Self::SPEED_JUMP;
+                            player.state   = PlayerState::Dash { time: 0.40 };
+                        } else {
+                            Self::to_duck(player);
+                        }
                     }
 
                     let self_speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
@@ -201,82 +197,153 @@ impl PlayerState {
                     // in-air movement.
                     player.speed.y -= Self::SPEED_AIR_FALL * State::TIME_STEP;
 
-                    if *null > 0.0 {
-                        return;
+                    if *null <= 0.0 {
+                        let speed_length = if move_speed < Self::SPEED_AIR_MIN {
+                            move_speed - (player.speed.dot(move_where))
+                        } else {
+                            Self::SPEED_AIR_MIN - (player.speed.dot(move_where))
+                        };
+
+                        if speed_length > 0.0 {
+                            player.speed += move_where
+                                * speed_length.min(Self::SPEED_AIR_RISE * move_speed * State::TIME_STEP);
+                        }
                     }
 
-                    let speed_length = if move_speed < Self::SPEED_AIR_MIN {
-                        move_speed - (player.speed.dot(move_where))
-                    } else {
-                        Self::SPEED_AIR_MIN - (player.speed.dot(move_where))
-                    };
+                    let ray_list = [
+                        Player::CUBE_SHAPE * -1.0,
+                        Player::CUBE_SHAPE * 0.00,
+                        Player::CUBE_SHAPE * 1.00
+                    ];
 
-                    if speed_length > 0.0 {
-                        player.speed += move_where
-                            * speed_length.min(Self::SPEED_AIR_RISE * move_speed * State::TIME_STEP);
+                    /*
+                    if handle.is_key_pressed(KeyboardKey::KEY_SPACE) {
+                        for x in 0..3 {
+                            let ray = raylib::math::Ray::new(player.point + ray_list[x], move_angle.x);
+
+                            // wall-run.
+                            if let Some((_, info)) = state.physical.cast_ray(ray, 0.05, true, QueryFilter::default().exclude_collider(player.collider)) {
+                                let plane = Vector3::new(info.normal.x, info.normal.y, info.normal.z);
+
+                                player.speed   = plane * 4.0;
+                                player.speed.y = Self::SPEED_JUMP * 1.0;
+                                break;
+                            }
+                        }
+                    }
+                    */
+
+                    if *time <= 0.0 {
+                        for x in 0..3 {
+                            let ray = raylib::math::Ray::new(player.point + ray_list[x], move_z);
+
+                            // wall-run.
+                            if let Some((_, info)) = state.physical.cast_ray(ray, 0.05, true, QueryFilter::default().exclude_collider(player.collider)) {
+                                let plane = Vector3::new(info.normal.x, info.normal.y, info.normal.z);
+                                let mut slide = move_angle.x - plane * (plane.dot(move_angle.x));
+                                slide.y = 0.0;
+
+                                player.speed = slide.normalized() * player.speed.length();
+                                player.state = Self::Wall { direction: Self::get_movement_key(handle, state.setting.move_z_a, state.setting.move_z_b), plane, ray: move_z };
+                                break;
+                            }
+                        }
                     }
 
-                    let ray = raylib::math::Ray::new(player.point, move_z);
-
-                    // wall-run.
-                    if let Some((collider, info)) = state.physical.cast_ray(ray, 0.1, true, QueryFilter::default().exclude_collider(player.collider)) {
-                        let plane = Vector3::new(info.normal.x, info.normal.y, info.normal.z);
-                        let speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
-                        let slide = speed - plane * (plane.dot(speed));
-
-                        println!("{}", slide.length());
-
-                        player.speed = slide;
-                        player.state = Self::Wall { direction: Self::get_movement_key(handle, KeyboardKey::KEY_A, KeyboardKey::KEY_D), plane }
+                    if state.setting.duck.press(handle) {
+                        player.speed.x = 0.0;
+                        player.speed.y = -8.0;
+                        player.speed.z = 0.0;
+                        player.state = Self::Slam { time : 0.0 };
                     }
                 }
             },
-            Self::Duck { ref mut time, ref mut fall } => {
+            Self::Dash { ref mut time } => {
                 *time -= State::TIME_STEP;
 
-                // hitting an obstacle should throw player off duck.
+                player.speed.y -= Self::SPEED_AIR_FALL * State::TIME_STEP;
 
-                if !player.floor {
-                    if handle.is_key_down(KeyboardKey::KEY_SPACE) {
-                        player.speed.y = Self::SPEED_JUMP;
+                if *time <= 0.0 || (player.clash && !player.slide) {
+                    player.state = Self::Walk { time: 0.5, jump: 0.0, null: 0.0 }
+                }
+            }
+            Self::Duck { ref mut time } => {
+                *time -= State::TIME_STEP;
+
+                if !player.floor && handle.is_key_down(KeyboardKey::KEY_SPACE) {
+                    player.speed.y = Self::SPEED_JUMP;
+                }
+
+                if *time <= 0.0 || handle.is_key_down(KeyboardKey::KEY_SPACE) || (player.clash && !player.slide) {
+                    player.state = Self::Walk { time: 0.35, jump: 0.0, null: 0.0 }
+                }
+            },
+            Self::Slam { ref mut time } => {
+                *time += State::TIME_STEP * 4.0;
+
+                player.speed.y -= 8.0_f32.powf(*time + 1.0) * State::TIME_STEP;
+
+                if player.floor {
+                    player.state = Self::Walk { time: 0.0, jump: 0.0, null: 0.0 }
+                }
+            },
+            Self::Wall { direction, plane, ray } => {
+                let wall_direction = Self::get_movement_key(handle, state.setting.move_z_a, state.setting.move_z_b);
+                let mut wall_none  = true;
+
+                let ray_list = [
+                    Player::CUBE_SHAPE * -1.0,
+                    Player::CUBE_SHAPE * 0.00,
+                    Player::CUBE_SHAPE * 1.00
+                ];
+
+                for x in 0..3 {
+                    let ray = raylib::math::Ray::new(player.point + ray_list[x], ray);
+
+                    // wall-run.
+                    if let Some(_) = state.physical.cast_ray(ray, 0.05, true, QueryFilter::default().exclude_collider(player.collider)) {
+                        wall_none = false;
+                        break;
                     }
                 }
 
-                if *time <= 0.0 || handle.is_key_down(KeyboardKey::KEY_SPACE) {
-                    player.state = Self::Normal { time: 0.5, jump: 0.0, null: 0.0 }
-                }
-            },
-            Self::Wall { direction, plane } => {
-                let wall_direction = Self::get_movement_key(handle, KeyboardKey::KEY_A, KeyboardKey::KEY_D);
+                // wall with an angle is acting kind of weird
+                // if player should fall/clash against a wall, make player unable to wall run until they touch the ground again.
 
-                // SPACE should bounce player off wall.
-                // hitting an obstacle should throw player off wall.
-
-                if wall_direction != direction {
-                    player.speed += plane * 2.0;
-                    player.state  = Self::Normal { time: 0.0, jump: 0.0, null: 0.5 }
+                if wall_direction != direction || player.clash || wall_none {
+                    player.speed += plane * Self::WALL_PLANE_FALL_FORCE;
+                    player.state  = Self::Walk {
+                        time: Self::WALL_PLANE_FALL_TIME,
+                        jump: 0.0,
+                        null: Self::WALL_PLANE_FALL_NULL
+                    }
                 }
 
                 if handle.is_key_pressed(KeyboardKey::KEY_SPACE) {
-                    player.speed   += plane * 4.0;
-                    player.speed.y  = Self::SPEED_JUMP;
-                    player.state    = Self::Normal { time: 0.0, jump: 0.0, null: 0.5 }
+                    player.speed  += plane *Self::WALL_PLANE_JUMP_FORCE;
+                    player.speed.y = Self::SPEED_JUMP;
+                    player.state  = Self::Walk {
+                        time: Self::WALL_PLANE_JUMP_TIME,
+                        jump: 0.0,
+                        null: Self::WALL_PLANE_JUMP_NULL
+                    }
                 }
             },
         }
     }
 
-    fn camera(player: &Player, draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,) -> Camera {
+    fn view(player: &Player, state: &State, draw: &RaylibMode3D<'_, RaylibDrawHandle<'_>>,) -> View {
         match player.state {
-            Self::Duck { .. } => {
-                Camera::new(Vector3::new(0.0, 0.5 - Player::CUBE_SHAPE.y, 0.0), Vector3::new(0.0, 0.1, 0.0), 100.0)
-            },
-            Self::Normal { time, jump, .. } => {
+            Self::Walk { jump, .. } => {
                 let direction = Direction::new_from_angle(&player.angle);
 
                 let speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
                 let scale = (draw.get_time() as f32 * 8.0).sin();
-                let tilt = (direction.z.dot(speed) / 4.5) * -2.5;
+                let tilt = if player.speed.y.abs() > 0.0 {
+                    Self::get_movement_key(draw, state.setting.move_z_a, state.setting.move_z_b) * -0.75
+                } else {
+                    (direction.z.dot(speed) / 4.5) * -2.5
+                };
                 let sway = (direction.x.dot(speed) / 4.5) * 0.10;
                 let point = if player.speed.y.abs() > 0.0 {
                     Vector3::zero()
@@ -284,14 +351,29 @@ impl PlayerState {
                     Vector3::up() * scale * sway
                 };
 
-                Camera::new(point + Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0), Vector3::new(0.0, jump * 0.1, tilt), 90.0)
+                View::new(point + Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON + jump.min(0.0), 0.0), Vector3::new(0.0, jump * 0.1, tilt), 90.0)
+            },
+            Self::Dash { .. } => {
+                let direction = Direction::new_from_angle(&player.angle);
+
+                let speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
+                let x = direction.x.dot(speed).clamp(-1.0, 1.0) * -0.10;
+                let z = direction.z.dot(speed).clamp(-1.0, 1.0) * -5.00;
+
+                View::new(Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0), Vector3::new(0.0, x, z), 100.0)
+            }
+            Self::Duck { .. } => {
+                View::new(Vector3::new(0.0, 0.25 - Player::CUBE_SHAPE.y, 0.0), Vector3::new(0.0, 0.1, 0.0), 100.0)
+            },
+            Self::Slam { .. } => {
+                View::new(Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0), Vector3::new(0.0, 0.0, 0.0), 100.0)
             },
             Self::Wall { direction, .. } => {
                 let speed = player.speed.length() / 8.0;
                 let sin = (draw.get_time() as f32 * 12.0).sin() * 0.1 * speed;
                 let cos = (draw.get_time() as f32 * 24.0).cos() * 0.1 * speed;
 
-                Camera::new(Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON + cos, sin), Vector3::new(0.0, 0.0, direction * 2.5), 110.0)
+                View::new(Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON + cos, sin), Vector3::new(0.0, 0.0, direction * 2.5), 110.0)
             },
         }
     }
@@ -301,9 +383,10 @@ impl PlayerState {
 
         if move_speed >= 1.0 {
             let move_angle = Direction::new_from_angle(&Vector3::new(player.angle.x, 0.0, 0.0));
+            let move_speed = move_angle.x * Self::DUCK_SPEED;
 
-            player.state = Self::Duck { time: Self::DUCK_SCALE, fall: 0.0 };
-            player.speed += move_angle.x * Self::DUCK_SPEED;
+            player.state = Self::Duck { time: Self::DUCK_SCALE };
+            player.speed = move_speed + player.speed * move_speed.dot(player.speed).signum()
         }
     }
 }
@@ -316,8 +399,10 @@ pub struct Player {
     collider: ColliderHandle,
     character: KinematicCharacterController,
     state: PlayerState,
-    camera: Camera,
+    view: View,
     floor: bool,
+    slide: bool,
+    clash: bool,
 }
 
 impl Player {
@@ -326,9 +411,7 @@ impl Player {
     const CUBE_SHAPE: Vector3 = Vector3::new(0.25, 0.5, 0.25);
 
     pub fn new(state: &mut State) -> anyhow::Result<Self> {
-        state
-            .physical
-            .new_model(state.asset.get_model("data/level.glb")?)?;
+        state.physical.new_model(state.asset.get_model("data/level.glb")?)?;
 
         let collider = state.physical.new_cuboid(Self::CUBE_SHAPE);
         let mollider = state.physical.get_collider_mut(collider).unwrap();
@@ -343,8 +426,10 @@ impl Player {
             collider,
             character,
             state: PlayerState::default(),
-            camera: Camera::default(),
-            floor: true,
+            view: View::default(),
+            floor: bool::default(),
+            slide: bool::default(),
+            clash: bool::default(),
         })
     }
 
@@ -354,35 +439,20 @@ impl Player {
         //================================================================
 
         let movement = state.physical.move_controller(self.collider, self.character, self.speed)?;
-        self.point += Vector3::new(movement.translation.x, movement.translation.y, movement.translation.z);
-        self.floor  = movement.grounded; 
+        let position = Vector3::new(movement.translation.x, movement.translation.y, movement.translation.z);
+
+        self.clash = false;
+        self.slide = movement.is_sliding_down_slope;
+
+        if self.speed * State::TIME_STEP != position {
+            self.clash = true;
+        }
+
+        self.point += position;
+        self.floor  = movement.grounded;
 
         Ok(())
     }
-}
-
-fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {
-    // port of raymath's function of the same name.
-
-    let axis = axis.normalized();
-
-    angle /= 2.0;
-    let mut a = angle.sin();
-    let b = axis.x * a;
-    let c = axis.y * a;
-    let d = axis.z * a;
-    a = angle.cos();
-    let w = Vector3::new(b, c, d);
-
-    let mut wv = w.cross(value);
-
-    let mut wwv = w.cross(wv);
-
-    wv.scale(a * 2.0);
-
-    wwv.scale(2.0);
-
-    value + wv + wwv
 }
 
 impl Entity for Player {
@@ -416,32 +486,39 @@ impl Entity for Player {
 
         let mouse = draw.get_mouse_delta();
 
-        self.angle.x -= mouse.x * 0.1;
-        self.angle.y += mouse.y * 0.1;
+        self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
+        self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
         self.angle.x %= 359.0;
         self.angle.y = self.angle.y.clamp(Self::ANGLE_MIN, Self::ANGLE_MAX);
 
         //================================================================
 
-        self.camera.blend(&PlayerState::camera(self, draw));
+        self.view.blend(draw, &PlayerState::view(self, state, draw));
 
         let direction = Direction::new_from_angle(&self.angle);
 
-        state.camera_3d.position = self.point + self.camera.point;
-        state.camera_3d.target   = self.point + self.camera.point + Vector3::new(self.camera.angle.x, self.camera.angle.y, 0.0) + direction.x;
-        state.camera_3d.up       = vector_3_rotate_by_axis_angle(direction.y, direction.x, self.camera.angle.z.to_radians());
-        state.camera_3d.fovy     = self.camera.scale;
+        state.camera_3d.position = self.point + self.view.point;
+        state.camera_3d.target   = self.point + self.view.point + Vector3::new(self.view.angle.x, self.view.angle.y, 0.0) + direction.x;
+        state.camera_3d.up       = vector_3_rotate_by_axis_angle(direction.y, direction.x, self.view.angle.z.to_radians());
+        state.camera_3d.fovy     = self.view.scale;
 
         Ok(())
     }
 
     fn draw_2d(
         &mut self,
-        state: &mut State,
+        _: &mut State,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
     ) -> anyhow::Result<()> {
-        draw.draw_circle_v(Vector2::new(1024.0 / 2.0, 768.0 / 2.0), 8.0, Color::BLACK);
-        draw.draw_circle_v(Vector2::new(1024.0 / 2.0, 768.0 / 2.0), 4.0, Color::WHITE);
+        let half = Vector2::new(
+            draw.get_render_width() as f32 * 0.5,
+            draw.get_render_height() as f32 * 0.5,
+        );
+
+        draw.draw_circle_v(half, 8.0, Color::BLACK);
+        draw.draw_circle_v(half, 4.0, Color::WHITE);
+
+        draw.draw_text(&format!("{}", self.clash), 8, 8, 32, Color::RED);
 
         Ok(())
     }
@@ -450,41 +527,5 @@ impl Entity for Player {
         self.movement(state, handle)?;
 
         Ok(())
-    }
-}
-
-pub struct Direction {
-    pub x: Vector3,
-    pub y: Vector3,
-    pub z: Vector3,
-}
-
-impl Direction {
-    pub fn new_from_angle(angle: &Vector3) -> Self {
-        // convert to radian.
-        let angle = Vector3::new(
-            angle.x.to_radians(),
-            angle.y.to_radians(),
-            angle.z.to_radians(),
-        );
-
-        // forward.
-        let x = Vector3::new(
-            angle.y.cos() * angle.x.sin(),
-            angle.y.sin() * -1.0,
-            angle.y.cos() * angle.x.cos(),
-        );
-
-        // up.
-        let y = Vector3::new(
-            angle.y.sin() * angle.x.sin(),
-            angle.y.cos(),
-            angle.y.sin() * angle.x.cos(),
-        );
-
-        // right.
-        let z = Vector3::new(angle.x.cos(), 0.0, angle.x.sin() * -1.0);
-
-        Self { x, y, z }
     }
 }

@@ -48,6 +48,111 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize)]
 pub struct Setting {
-    pub screen_size: (u32, u32),
+    pub screen_field: u32,
+    pub screen_shake: f32,
+    pub screen_tilt: f32,
+    pub screen_full: bool,
+    pub screen_sync: bool,
+    pub screen_rate: u32,
+    pub mouse_speed: f32,
+    pub move_x_a: Input,
+    pub move_x_b: Input,
+    pub move_z_a: Input,
+    pub move_z_b: Input,
+    pub jump: Input,
+    pub duck: Input,
+    pub fire_a: Input,
+    pub fire_b: Input,
+}
+
+impl Setting {
+    const PATH_FILE: &'static str = "setting.json";
+}
+
+impl Default for Setting {
+    fn default() -> Self {
+        if let Ok(file) = std::fs::read_to_string(Self::PATH_FILE)
+            && let Ok(data) = serde_json::from_str(&file)
+        {
+            data
+        } else {
+            Self {
+                screen_field: 90,
+                screen_shake: 1.0,
+                screen_tilt: 1.0,
+                screen_full: false,
+                screen_sync: false,
+                screen_rate: 60,
+                mouse_speed: 1.0,
+                move_x_a: Input::Board(KeyboardKey::KEY_W as u32),
+                move_x_b: Input::Board(KeyboardKey::KEY_S as u32),
+                move_z_a: Input::Board(KeyboardKey::KEY_A as u32),
+                move_z_b: Input::Board(KeyboardKey::KEY_D as u32),
+                jump: Input::Board(KeyboardKey::KEY_SPACE as u32),
+                duck: Input::Mouse(MouseButton::MOUSE_BUTTON_EXTRA as u32),
+                fire_a: Input::Mouse(MouseButton::MOUSE_BUTTON_LEFT as u32),
+                fire_b: Input::Mouse(MouseButton::MOUSE_BUTTON_RIGHT as u32),
+            }
+        }
+    }
+}
+
+impl Drop for Setting {
+    fn drop(&mut self) {
+        if let Ok(data) = serde_json::to_string_pretty(self) {
+            std::fs::write(Self::PATH_FILE, data);
+        }
+    }
+}
+
+// there is a build failure on raylib-rs 5.5.1 when using the "serde" feature
+// that supposedly does implement Serialize for KeyboardKey/etc; but it does not
+// compile successfully as of 5/9/2025.
+#[derive(Serialize, Deserialize, Copy, Clone)]
+pub enum Input {
+    Board(u32),
+    Mouse(u32),
+}
+
+impl Input {
+    fn to_board(value: u32) -> KeyboardKey {
+        unsafe { std::mem::transmute(value) }
+    }
+
+    fn to_mouse(value: u32) -> MouseButton {
+        unsafe { std::mem::transmute(value) }
+    }
+
+    pub fn up(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Input::Board(board) => handle.is_key_up(Self::to_board(*board)),
+            Input::Mouse(mouse) => handle.is_mouse_button_up(Self::to_mouse(*mouse)),
+        }
+    }
+
+    pub fn down(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Input::Board(board) => handle.is_key_down(Self::to_board(*board)),
+            Input::Mouse(mouse) => handle.is_mouse_button_down(Self::to_mouse(*mouse)),
+        }
+    }
+
+    pub fn press(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Input::Board(board) => handle.is_key_pressed(Self::to_board(*board)),
+            Input::Mouse(mouse) => handle.is_mouse_button_pressed(Self::to_mouse(*mouse)),
+        }
+    }
+
+    pub fn release(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Input::Board(board) => handle.is_key_released(Self::to_board(*board)),
+            Input::Mouse(mouse) => handle.is_mouse_button_released(Self::to_mouse(*mouse)),
+        }
+    }
 }

@@ -48,41 +48,99 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-mod asset;
-mod entity;
-mod physical;
-mod player;
-mod setting;
-mod state;
-mod utility;
-
-//================================================================
-
 use crate::state::*;
 
 //================================================================
 
-fn main() -> anyhow::Result<()> {
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "1");
+use raylib::prelude::*;
+
+//================================================================
+
+pub struct Direction {
+    pub x: Vector3,
+    pub y: Vector3,
+    pub z: Vector3,
+}
+
+impl Direction {
+    pub fn new_from_angle(angle: &Vector3) -> Self {
+        // convert to radian.
+        let angle = Vector3::new(
+            angle.x.to_radians(),
+            angle.y.to_radians(),
+            angle.z.to_radians(),
+        );
+
+        // forward.
+        let x = Vector3::new(
+            angle.y.cos() * angle.x.sin(),
+            angle.y.sin() * -1.0,
+            angle.y.cos() * angle.x.cos(),
+        );
+
+        // up.
+        let y = Vector3::new(
+            angle.y.sin() * angle.x.sin(),
+            angle.y.cos(),
+            angle.y.sin() * angle.x.cos(),
+        );
+
+        // right.
+        let z = Vector3::new(angle.x.cos(), 0.0, angle.x.sin() * -1.0);
+
+        Self { x, y, z }
+    }
+}
+
+#[derive(Default)]
+pub struct View {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub scale: f32,
+}
+
+impl View {
+    const BLEND_POINT: f32 = 16.0;
+    const BLEND_ANGLE: f32 = 16.0;
+    const BLEND_SCALE: f32 = 16.0;
+
+    pub fn new(point: Vector3, angle: Vector3, scale: f32) -> Self {
+        Self {
+            point,
+            angle,
+            scale,
+        }
     }
 
-    let mut state = State::new();
+    pub fn blend(&mut self, handle: &RaylibHandle, view: &View) {
+        let frame = handle.get_frame_time();
 
-    //================================================================
+        self.point += (view.point - self.point) * frame * Self::BLEND_POINT;
+        self.angle += (view.angle - self.angle) * frame * Self::BLEND_ANGLE;
+        self.scale += (view.scale - self.scale) * frame * Self::BLEND_SCALE;
+    }
+}
 
-    //let (mut handle, thread) = raylib::init().size(1024, 768).title("Mettle").build();
-    let (mut handle, thread) = raylib::init()
-        .size(1920, 1080)
-        .fullscreen()
-        .title("Mettle")
-        .build();
+pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {
+    // port of raymath's function of the same name.
 
-    handle.set_target_fps(state.setting.screen_rate);
-    handle.disable_cursor();
+    let axis = axis.normalized();
 
-    //================================================================
+    angle /= 2.0;
+    let mut a = angle.sin();
+    let b = axis.x * a;
+    let c = axis.y * a;
+    let d = axis.z * a;
+    a = angle.cos();
+    let w = Vector3::new(b, c, d);
 
-    state.initialize(&mut handle, &thread)?;
-    state.main(&mut handle, &thread)
+    let mut wv = w.cross(value);
+
+    let mut wwv = w.cross(wv);
+
+    wv.scale(a * 2.0);
+
+    wwv.scale(2.0);
+
+    value + wv + wwv
 }
