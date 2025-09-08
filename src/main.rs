@@ -60,6 +60,8 @@ mod window;
 
 //================================================================
 
+use raylib::audio::RaylibAudio;
+
 use crate::state::*;
 
 //================================================================
@@ -69,6 +71,8 @@ fn main() -> anyhow::Result<()> {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
 
+    let audio = RaylibAudio::init_audio_device()?;
+
     let mut state = State::new();
 
     //================================================================
@@ -77,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     let (mut handle, thread) = raylib::init()
         .size(1024, 768)
         .resizable()
-        .title("Mettle")
+        .title("pwrmttl")
         .build();
 
     if state.setting.screen_full {
@@ -90,8 +94,8 @@ fn main() -> anyhow::Result<()> {
 
     //================================================================
 
-    state.initialize(&mut handle, &thread)?;
-    state.main(&mut handle, &thread)?;
+    state.initialize(&mut handle, &thread, &audio)?;
+    state.main(&mut handle, &thread, &audio)?;
 
     // weird drop bug in raylib-rs will cause state to drop incorrectly.
     drop(state);

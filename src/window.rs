@@ -54,6 +54,7 @@ use crate::utility::*;
 
 use raylib::prelude::*;
 use std::collections::HashMap;
+use std::f32;
 
 pub struct Response {
     pub hover: bool,
@@ -64,6 +65,7 @@ pub struct Response {
 #[derive(Default, Clone, Copy)]
 pub struct Widget {
     pub delta: f32,
+    pub hover: bool,
 }
 
 impl Response {
@@ -77,14 +79,14 @@ impl Response {
 }
 
 #[derive(Default)]
-pub struct Window {
+pub struct Window<'a> {
     widget: HashMap<String, Widget>,
-    asset: Asset,
+    asset: Asset<'a>,
     point: Vector2,
     mouse: Vector2,
 }
 
-impl Window {
+impl<'a> Window<'a> {
     const BUTTON_SHAPE_Y: f32 = 32.0;
     const FONT_SPACE: f32 = 1.0;
 
@@ -92,23 +94,47 @@ impl Window {
         &mut self,
         handle: &mut RaylibHandle,
         thread: &RaylibThread,
+        audio: &'a RaylibAudio,
     ) -> anyhow::Result<()> {
-        self.asset.set_font(handle, thread, "data/font_large.ttf")?;
+        self.asset
+            .set_font(handle, thread, "data/video/font_label.ttf", 32)?;
+        self.asset
+            .set_font(handle, thread, "data/video/font_title.ttf", 56)?;
+        self.asset.set_sound(audio, "data/audio/hover.ogg")?;
+        self.asset.set_sound(audio, "data/audio/click.ogg")?;
 
         Ok(())
     }
 
     fn begin(&mut self, handle: &RaylibHandle) {
         self.point = Vector2::new(8.0, 8.0);
-        self.mouse = handle.get_mouse_position();
+
+        if self.mouse == Vector2::zero() {
+            let delta = handle.get_mouse_delta();
+
+            if delta != Vector2::zero() {
+                self.mouse = handle.get_mouse_position();
+            }
+        } else {
+            self.mouse = handle.get_mouse_position();
+        }
     }
     fn close(&mut self) {}
 
-    fn font(&self) -> anyhow::Result<&Font> {
-        self.asset.get_font("data/font_large.ttf")
+    fn font_label(&self) -> anyhow::Result<&Font> {
+        self.asset.get_font("data/video/font_label.ttf")
     }
 
-    fn response(&mut self, handle: &RaylibHandle, text: &str, shape: Rectangle) -> Response {
+    fn font_title(&self) -> anyhow::Result<&Font> {
+        self.asset.get_font("data/video/font_title.ttf")
+    }
+
+    fn response(
+        &mut self,
+        handle: &RaylibHandle,
+        text: &str,
+        shape: Rectangle,
+    ) -> anyhow::Result<Response> {
         let hover = shape.check_collision_point_rec(self.mouse);
         let click = handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
 
@@ -116,14 +142,21 @@ impl Window {
         let frame = handle.get_frame_time();
 
         if hover {
-            entry.delta += frame * 6.0;
+            entry.delta += frame * 8.0;
+
+            if !entry.hover {
+                self.asset.get_sound("data/audio/hover.ogg")?.play();
+
+                entry.hover = true;
+            }
         } else {
-            entry.delta -= frame * 6.0;
+            entry.delta -= frame * 4.0;
+            entry.hover = false;
         }
 
         entry.delta = entry.delta.clamp(0.0, 1.0);
 
-        Response::new(hover, hover && click, *entry)
+        Ok(Response::new(hover, hover && click, *entry))
     }
 
     pub fn draw<
@@ -142,37 +175,115 @@ impl Window {
         Ok(())
     }
 
+    fn draw_border(
+        &self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        shape: Rectangle,
+        label: &str,
+        delta: f32,
+    ) -> anyhow::Result<()> {
+        let white = Color::WHITE.lerp(Color::BLACK, delta);
+        let black = Color::BLACK.lerp(Color::WHITE, delta);
+
+        draw.draw_rectangle_rec(shape, black);
+
+        let shape = Rectangle::new(
+            shape.x + 3.0,
+            shape.y + 3.0,
+            shape.width - 6.0,
+            shape.height - 6.0,
+        );
+
+        draw.draw_rectangle_rec(shape, white);
+
+        if !label.is_empty() {
+            draw.draw_text_ex(
+                self.font_label()?,
+                label,
+                Vector2::new(shape.x + 4.0, shape.y - 6.0),
+                Self::BUTTON_SHAPE_Y,
+                Self::FONT_SPACE,
+                black,
+            );
+        }
+
+        Ok(())
+    }
+
+    fn draw_border_text(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        shape: Rectangle,
+    ) -> anyhow::Result<Response> {
+        let font = self.font_label()?;
+        let width = font.measure_text(text, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
+        let mut size = Rectangle::new(shape.x, shape.y, shape.width + width.x, shape.height);
+        let response = self.response(draw, text, size)?;
+        let delta = ease_in_out_cubic(response.widget.delta);
+
+        size.x += delta * 8.0;
+
+        self.draw_border(draw, size, text, delta)?;
+
+        Ok(response)
+    }
+
     pub fn button(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
     ) -> anyhow::Result<Response> {
-        let font = self.font()?;
-        let size = font.measure_text(text, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
-        let mut size = Rectangle::new(
-            self.point.x,
-            self.point.y,
-            size.x + 8.0,
-            Self::BUTTON_SHAPE_Y,
-        );
-        let response = self.response(draw, text, size);
-        let delta = ease_in_out_cubic(response.widget.delta);
-        let white = Color::WHITE.lerp(Color::BLACK, delta);
-        let black = Color::BLACK.lerp(Color::WHITE, delta);
-
-        size.x += delta * 8.0;
-        draw.draw_rectangle_rec(size, black);
-
-        draw.draw_text_ex(
-            self.font()?,
+        let response = self.draw_border_text(
+            draw,
             text,
-            self.point + Vector2::new(4.0 + delta * 8.0, 0.0),
-            Self::BUTTON_SHAPE_Y,
-            Self::FONT_SPACE,
-            white,
-        );
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
 
-        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if response.click {
+            self.asset.get_sound("data/audio/click.ogg")?.play();
+        }
+
+        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+
+        Ok(response)
+    }
+
+    pub fn toggle(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        value: &mut bool,
+    ) -> anyhow::Result<Response> {
+        self.draw_border(
+            draw,
+            Rectangle::new(
+                self.point.x,
+                self.point.y,
+                Self::BUTTON_SHAPE_Y,
+                Self::BUTTON_SHAPE_Y,
+            ),
+            "",
+            if *value { 1.0 } else { 0.0 },
+        )?;
+
+        let response = self.draw_border_text(
+            draw,
+            text,
+            Rectangle::new(
+                self.point.x + Self::BUTTON_SHAPE_Y + 8.0,
+                self.point.y,
+                16.0,
+                Self::BUTTON_SHAPE_Y,
+            ),
+        )?;
+
+        if response.click {
+            self.asset.get_sound("data/audio/click.ogg")?.play();
+            *value = !*value;
+        }
+
+        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
 
         Ok(response)
     }
@@ -189,16 +300,56 @@ pub enum Layout {
 }
 
 impl Layout {
-    pub fn draw(
-        state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
+    const INITIAL_POINT: Vector2 = Vector2::new(12.0, 84.0);
+
+    fn change_layout(state: &mut State, layout: Self) {
+        state.layout = layout;
+        state.window.widget.clear();
+        state.window.mouse = Vector2::zero();
+    }
+
+    pub fn draw(state: &mut State, draw: &mut RaylibDrawHandle) -> anyhow::Result<()> {
         match state.layout {
             Layout::Main => Self::main(state, draw),
             Layout::Begin => Self::begin(state, draw),
             Layout::Setup => Self::setup(state, draw),
             Layout::Close => Self::close(state, draw),
             _ => Ok(()),
+        }
+    }
+
+    fn draw_back(handle: &mut RaylibDrawHandle) {
+        let time = handle.get_time() as f32 * 0.5;
+        let x = time.sin() * 8.0;
+        let z = time.cos() * 8.0;
+
+        let mut draw = handle.begin_mode3D(Camera3D::perspective(
+            Vector3::new(x, 6.0, z),
+            Vector3::zero(),
+            Vector3::up(),
+            90.0,
+        ));
+
+        draw.draw_cube(Vector3::zero(), 4.0, 4.0, 4.0, Color::BLACK);
+
+        for r in 0..8 {
+            let p = (r as f32 / 8.0);
+
+            for i in 0..16 {
+                let t = time * (2.0 + 4.0 * p);
+                let j = (i as f32 / 8.0) * f32::consts::PI;
+                let x = j.sin() * (6.0 + 24.0 * p);
+                let y = t.sin() * (2.0 + 4.0 * p) - (8.0 * p);
+                let z = j.cos() * (6.0 + 24.0 * p);
+
+                draw.draw_cube(
+                    Vector3::new(x, y, z),
+                    1.0,
+                    6.0,
+                    1.0,
+                    Color::new(127, 127, 127, 127),
+                );
+            }
         }
     }
 
@@ -211,83 +362,155 @@ impl Layout {
             draw.get_render_width() as f32,
             draw.get_render_height() as f32,
         );
-        let head = Rectangle::new(0.0, 0.0, screen_size.x, 64.0);
-        let foot = Rectangle::new(0.0, screen_size.y - 64.0, screen_size.x, 64.0);
+        let head = Rectangle::new(0.0, 0.0, screen_size.x, 72.0);
+        let foot = Rectangle::new(0.0, screen_size.y - 72.0, screen_size.x, 72.0);
 
         draw.draw_rectangle_rec(head, Color::BLACK);
         draw.draw_rectangle_rec(foot, Color::BLACK);
 
-        let font = window.font()?;
+        let font = window.font_title()?;
 
-        draw.draw_text_ex(font, text, Vector2::new(8.0, -4.0), 64.0, 1.0, Color::WHITE);
+        let sin_a = ((draw.get_time() as f32 * 2.0).sin() * 4.0).min(0.0);
+        let sin_b = (draw.get_time() as f32 * 4.0).sin().max(0.0);
+
+        draw.draw_text_ex(
+            font,
+            text,
+            Vector2::new(16.0, 8.0),
+            56.0,
+            4.0,
+            Color::GRAY.lerp(Color::BLACK, sin_b),
+        );
+
+        draw.draw_text_ex(
+            font,
+            text,
+            Vector2::new(16.0 + sin_a, 8.0 + sin_a),
+            56.0,
+            4.0,
+            Color::WHITE,
+        );
 
         Ok(())
     }
 
-    fn main(
-        state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        state.window.draw(draw, |window, draw| {
+    fn main(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(handle);
+
+        let mut draw = handle.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
             Self::draw_head_foot(window, draw, "pwrmttl")?;
 
-            window.point = Vector2::new(8.0, 72.0);
+            window.point = Self::INITIAL_POINT;
 
             if window.button(draw, "begin")?.click {
-                state.layout = Self::Begin;
+                layout = Some(Self::Begin);
             };
             if window.button(draw, "setup")?.click {
-                state.layout = Self::Setup;
+                layout = Some(Self::Setup);
             };
             if window.button(draw, "close")?.click {
-                state.layout = Self::Close;
+                layout = Some(Self::Close);
             };
 
             Ok(())
-        })
-    }
+        })?;
 
-    fn begin(
-        state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
+        if let Some(layout) = layout {
+            Self::change_layout(state, layout);
+        }
+
         Ok(())
     }
 
-    fn setup(
-        state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        state.window.draw(draw, |window, draw| {
+    fn begin(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn setup(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(handle);
+
+        let mut draw = handle.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
             Self::draw_head_foot(window, draw, "setup")?;
 
-            window.point = Vector2::new(8.0, 72.0);
+            window.point = Self::INITIAL_POINT;
+
+            if window
+                .toggle(draw, "frame full", &mut state.setting.screen_full)?
+                .click
+            {
+                if draw.is_window_fullscreen() {
+                    draw.set_window_size(1024, 768);
+                } else {
+                    draw.set_window_size(1920, 1080);
+                }
+
+                draw.toggle_fullscreen();
+            }
+            window.toggle(draw, "frame sync", &mut state.setting.screen_sync)?;
 
             if window.button(draw, "return")?.click {
-                state.layout = Self::Main;
+                layout = Some(Self::Main);
             };
 
             Ok(())
-        })
+        })?;
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, layout);
+        }
+
+        Ok(())
     }
 
-    fn close(
-        state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-    ) -> anyhow::Result<()> {
-        state.window.draw(draw, |window, draw| {
+    fn close(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(handle);
+
+        let mut draw = handle.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
             Self::draw_head_foot(window, draw, "close")?;
 
-            window.point = Vector2::new(8.0, 72.0);
+            window.point = Self::INITIAL_POINT;
 
             if window.button(draw, "accept")?.click {
                 state.close = true;
             };
             if window.button(draw, "return")?.click {
-                state.layout = Self::Main;
+                layout = Some(Self::Main);
             };
 
             Ok(())
-        })
+        })?;
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, layout);
+        }
+
+        Ok(())
     }
 }

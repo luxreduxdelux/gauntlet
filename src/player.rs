@@ -176,8 +176,8 @@ impl Entity for Player {
 
         let mouse = draw.get_mouse_delta();
 
-        //self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
-        //self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
+        self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
+        self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
         self.angle.x %= 359.0;
         self.angle.y = self.angle.y.clamp(Self::ANGLE_MIN, Self::ANGLE_MAX);
 
@@ -340,12 +340,12 @@ impl PlayerState {
                         player.speed.y = 0.0;
                     }
 
-                    if state.setting.jump.down(handle) {
+                    if state.setting.jump.press() {
                         player.speed.y = Self::SPEED_JUMP;
                         *jump = 0.5;
                     }
 
-                    if state.setting.duck.down(handle) && *time <= 0.0 {
+                    if state.setting.duck.press() && *time <= 0.0 {
                         if state.setting.move_z_a.down(handle)
                             || state.setting.move_x_b.down(handle)
                             || state.setting.move_z_b.down(handle)
@@ -459,12 +459,12 @@ impl PlayerState {
                         }
                     }
 
-                    //if state.setting.jump.press() {
-                    //    player.speed.x = 0.0;
-                    //    player.speed.y = -8.0;
-                    //    player.speed.z = 0.0;
-                    //    player.state = Self::Slam { time : 0.0 };
-                    //}
+                    if state.setting.duck.press() {
+                        player.speed.x = 0.0;
+                        player.speed.y = -8.0;
+                        player.speed.z = 0.0;
+                        player.state = Self::Slam { time: 0.0 };
+                    }
                 }
             }
             Self::Dash { ref mut time } => {
@@ -556,8 +556,7 @@ impl PlayerState {
                     }
                 }
 
-                // TO-DO use poll system.
-                if state.setting.jump.down(handle) {
+                if state.setting.jump.press() {
                     player.speed += plane * Self::WALL_PLANE_JUMP_FORCE;
                     player.speed.y = Self::SPEED_JUMP;
                     player.state = Self::Walk {

@@ -54,12 +54,13 @@ use std::collections::HashMap;
 //================================================================
 
 #[derive(Default)]
-pub struct Asset {
+pub struct Asset<'a> {
     model: HashMap<String, Model>,
+    sound: HashMap<String, Sound<'a>>,
     font: HashMap<String, Font>,
 }
 
-impl Asset {
+impl<'a> Asset<'a> {
     pub fn set_model(
         &mut self,
         handle: &mut RaylibHandle,
@@ -91,13 +92,28 @@ impl Asset {
         )))
     }
 
+    pub fn set_sound(&mut self, audio: &'a RaylibAudio, name: &str) -> anyhow::Result<&Sound<'a>> {
+        let sound = audio.new_sound(name)?;
+
+        self.sound.insert(name.to_string(), sound);
+
+        self.get_sound(name)
+    }
+
+    pub fn get_sound(&self, name: &str) -> anyhow::Result<&Sound<'a>> {
+        self.sound.get(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_sound(): Could not find asset \"{name}\"."
+        )))
+    }
+
     pub fn set_font(
         &mut self,
         handle: &mut RaylibHandle,
         thread: &RaylibThread,
         name: &str,
+        size: i32,
     ) -> anyhow::Result<&Font> {
-        let font = handle.load_font(thread, name)?;
+        let font = handle.load_font_ex(thread, name, size, None)?;
 
         self.font.insert(name.to_string(), font);
 

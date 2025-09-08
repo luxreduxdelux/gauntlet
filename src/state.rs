@@ -61,10 +61,10 @@ use raylib::prelude::*;
 
 //================================================================
 
-pub struct State {
+pub struct State<'a> {
     pub close: bool,
-    pub asset: Asset,
-    pub window: Window,
+    pub asset: Asset<'a>,
+    pub window: Window<'a>,
     pub layout: Layout,
     pub setting: Setting,
     pub entity_list: Vec<Box<dyn Entity>>,
@@ -75,8 +75,8 @@ pub struct State {
     step: f32,
 }
 
-impl State {
-    pub const TIME_STEP: f32 = 1.0 / 144.0;
+impl<'a> State<'a> {
+    pub const TIME_STEP: f32 = 1.0 / 60.0;
 
     pub fn new() -> Self {
         Self {
@@ -103,23 +103,30 @@ impl State {
         &mut self,
         handle: &mut RaylibHandle,
         thread: &RaylibThread,
+        audio: &'a RaylibAudio,
     ) -> anyhow::Result<()> {
-        self.asset.set_model(handle, thread, "data/level.glb")?;
-        self.window.initialize(handle, thread)?;
-
-        let player = Box::new(Player::new(self)?);
-        self.entity_list.push(player);
+        //self.asset
+        //    .set_model(handle, thread, "data/level/level.glb")?;
+        self.window.initialize(handle, thread, audio)?;
+        //let player = Box::new(Player::new(self)?);
+        //self.entity_list.push(player);
 
         Ok(())
     }
 
-    pub fn main(&mut self, handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<()> {
+    pub fn main(
+        &mut self,
+        handle: &mut RaylibHandle,
+        thread: &RaylibThread,
+        audio: &'a RaylibAudio,
+    ) -> anyhow::Result<()> {
         while !handle.window_should_close() && !self.close {
             if handle.is_key_pressed(KeyboardKey::KEY_F1) {
                 *self = State::new();
-                self.initialize(handle, thread)?;
+                self.initialize(handle, thread, audio)?;
             }
 
+            /*
             let frame_time = handle.get_frame_time().min(0.25);
 
             self.step += frame_time;
@@ -169,9 +176,14 @@ impl State {
                         entity.draw_2d(&mut *state, &mut draw_2d)?;
                     }
                 }
-
-                Layout::draw(self, &mut draw_2d)?;
             }
+            */
+
+            let mut draw = handle.begin_drawing(thread);
+
+            draw.clear_background(Color::WHITE);
+
+            Layout::draw(self, &mut draw)?;
         }
 
         Ok(())
