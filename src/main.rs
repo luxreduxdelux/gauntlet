@@ -67,10 +67,6 @@ use crate::state::*;
 //================================================================
 
 fn main() -> anyhow::Result<()> {
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "1");
-    }
-
     let audio = RaylibAudio::init_audio_device()?;
 
     let mut state = State::new();
@@ -90,12 +86,11 @@ fn main() -> anyhow::Result<()> {
 
     handle.set_exit_key(None);
     handle.set_target_fps(state.setting.screen_rate);
-    //handle.disable_cursor();
 
     //================================================================
 
-    state.initialize(&mut handle, &thread, &audio)?;
-    state.main(&mut handle, &thread, &audio)?;
+    State::error(state.initialize(&mut handle, &thread, &audio));
+    State::error(state.main(&mut handle, &thread, &audio));
 
     // weird drop bug in raylib-rs will cause state to drop incorrectly.
     drop(state);

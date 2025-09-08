@@ -48,13 +48,21 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// 3D render should have fog, potentially lighting (black light upon grey glass or something)
+// add trail effect from far out into cube
+// cube should also animate, rotating like a rubik's cube
+
 use crate::asset::*;
 use crate::state::State;
 use crate::utility::*;
 
+//================================================================
+
 use raylib::prelude::*;
 use std::collections::HashMap;
 use std::f32;
+
+//================================================================
 
 pub struct Response {
     pub hover: bool,
@@ -292,6 +300,7 @@ impl<'a> Window<'a> {
 #[derive(Default)]
 pub enum Layout {
     Intro,
+    None,
     #[default]
     Main,
     Begin,
@@ -309,6 +318,16 @@ impl Layout {
     }
 
     pub fn draw(state: &mut State, draw: &mut RaylibDrawHandle) -> anyhow::Result<()> {
+        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+            if matches!(state.layout, Layout::None) {
+                Self::change_layout(state, Layout::Main);
+                draw.enable_cursor();
+            } else {
+                Self::change_layout(state, Layout::None);
+                draw.disable_cursor();
+            }
+        }
+
         match state.layout {
             Layout::Main => Self::main(state, draw),
             Layout::Begin => Self::begin(state, draw),
@@ -318,7 +337,11 @@ impl Layout {
         }
     }
 
-    fn draw_back(handle: &mut RaylibDrawHandle) {
+    fn draw_back(handle: &mut RaylibDrawHandle, in_game: bool) {
+        if in_game {
+            return;
+        }
+
         let time = handle.get_time() as f32 * 0.5;
         let x = time.sin() * 8.0;
         let z = time.cos() * 8.0;
@@ -356,6 +379,7 @@ impl Layout {
     fn draw_head_foot(
         window: &Window,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        in_game: bool,
         text: &str,
     ) -> anyhow::Result<()> {
         let screen_size = Vector2::new(
@@ -364,7 +388,11 @@ impl Layout {
         );
         let head = Rectangle::new(0.0, 0.0, screen_size.x, 72.0);
         let foot = Rectangle::new(0.0, screen_size.y - 72.0, screen_size.x, 72.0);
+        let full = Rectangle::new(0.0, 0.0, screen_size.x, screen_size.y);
 
+        if in_game {
+            draw.draw_rectangle_rec(full, Color::new(0, 0, 0, 127));
+        }
         draw.draw_rectangle_rec(head, Color::BLACK);
         draw.draw_rectangle_rec(foot, Color::BLACK);
 
@@ -395,7 +423,7 @@ impl Layout {
     }
 
     fn main(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle);
+        Self::draw_back(handle, state.in_game);
 
         let mut draw = handle.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -407,7 +435,7 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, "pwrmttl")?;
+            Self::draw_head_foot(window, draw, state.in_game, "pwrmttl")?;
 
             window.point = Self::INITIAL_POINT;
 
@@ -436,7 +464,7 @@ impl Layout {
     }
 
     fn setup(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle);
+        Self::draw_back(handle, state.in_game);
 
         let mut draw = handle.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -448,7 +476,7 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, "setup")?;
+            Self::draw_head_foot(window, draw, state.in_game, "setup")?;
 
             window.point = Self::INITIAL_POINT;
 
@@ -481,7 +509,7 @@ impl Layout {
     }
 
     fn close(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle);
+        Self::draw_back(handle, state.in_game);
 
         let mut draw = handle.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -493,7 +521,7 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, "close")?;
+            Self::draw_head_foot(window, draw, state.in_game, "close")?;
 
             window.point = Self::INITIAL_POINT;
 

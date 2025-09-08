@@ -67,6 +67,7 @@ pub struct State<'a> {
     pub window: Window<'a>,
     pub layout: Layout,
     pub setting: Setting,
+    pub in_game: bool,
     pub entity_list: Vec<Box<dyn Entity>>,
     pub camera_3d: Camera3D,
     pub camera_2d: Camera2D,
@@ -78,6 +79,22 @@ pub struct State<'a> {
 impl<'a> State<'a> {
     pub const TIME_STEP: f32 = 1.0 / 60.0;
 
+    pub fn error(result: anyhow::Result<()>) {
+        if let Err(error) = result {
+            let e = error.to_string();
+
+            std::thread::spawn(move || {
+                rfd::MessageDialog::new()
+                    .set_level(rfd::MessageLevel::Error)
+                    .set_title("Fatal Error")
+                    .set_description(e)
+                    .show();
+            });
+
+            panic!("{:?}", error);
+        }
+    }
+
     pub fn new() -> Self {
         Self {
             close: bool::default(),
@@ -85,6 +102,7 @@ impl<'a> State<'a> {
             window: Window::default(),
             layout: Layout::default(),
             setting: Setting::default(),
+            in_game: true,
             entity_list: Default::default(),
             camera_3d: Camera3D::perspective(
                 Vector3::default(),
@@ -105,11 +123,11 @@ impl<'a> State<'a> {
         thread: &RaylibThread,
         audio: &'a RaylibAudio,
     ) -> anyhow::Result<()> {
-        //self.asset
-        //    .set_model(handle, thread, "data/level/level.glb")?;
+        self.asset
+            .set_model(handle, thread, "data/level/level.glb")?;
         self.window.initialize(handle, thread, audio)?;
-        //let player = Box::new(Player::new(self)?);
-        //self.entity_list.push(player);
+        let player = Box::new(Player::new(self)?);
+        self.entity_list.push(player);
 
         Ok(())
     }
@@ -126,24 +144,25 @@ impl<'a> State<'a> {
                 self.initialize(handle, thread, audio)?;
             }
 
-            /*
-            let frame_time = handle.get_frame_time().min(0.25);
+            if matches!(self.layout, Layout::None) {
+                let frame_time = handle.get_frame_time().min(0.25);
 
-            self.step += frame_time;
+                self.step += frame_time;
 
-            while self.step >= Self::TIME_STEP {
-                self.physical.tick();
+                while self.step >= Self::TIME_STEP {
+                    self.physical.tick();
 
-                unsafe {
-                    let state = self as *mut Self;
+                    unsafe {
+                        let state = self as *mut Self;
 
-                    for entity in &mut self.entity_list {
-                        entity.tick(&mut *state, handle)?;
+                        for entity in &mut self.entity_list {
+                            entity.tick(&mut *state, handle)?;
+                        }
                     }
-                }
 
-                self.time += Self::TIME_STEP;
-                self.step -= Self::TIME_STEP;
+                    self.time += Self::TIME_STEP;
+                    self.step -= Self::TIME_STEP;
+                }
             }
 
             let mut draw = handle.begin_drawing(thread);
@@ -177,11 +196,6 @@ impl<'a> State<'a> {
                     }
                 }
             }
-            */
-
-            let mut draw = handle.begin_drawing(thread);
-
-            draw.clear_background(Color::WHITE);
 
             Layout::draw(self, &mut draw)?;
         }

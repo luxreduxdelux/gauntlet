@@ -48,6 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// interpolate entity point/angle from previous frame to current to smooth out 60tick update rate
+// bunny hop player movement state: if you slide, jump, then hit the next jump immediately after falling, every subsequent jump will have increased forward velocity with the limitation of less strafe movement
+
 use crate::entity::*;
 use crate::setting::*;
 use crate::state::*;
@@ -83,7 +86,7 @@ impl Player {
     pub fn new(state: &mut State) -> anyhow::Result<Self> {
         state
             .physical
-            .new_model(state.asset.get_model("data/level.glb")?)?;
+            .new_model(state.asset.get_model("data/level/level.glb")?)?;
 
         let collider = state.physical.new_cuboid(Self::CUBE_SHAPE);
         let mollider = state.physical.get_collider_mut(collider).unwrap();
@@ -153,7 +156,7 @@ impl Entity for Player {
         state: &mut State,
         draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
     ) -> anyhow::Result<()> {
-        let model = state.asset.get_model("data/level.glb")?;
+        let model = state.asset.get_model("data/level/level.glb")?;
 
         draw.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
 
@@ -553,17 +556,28 @@ impl PlayerState {
                         time: Self::WALL_PLANE_FALL_TIME,
                         jump: 0.0,
                         null: Self::WALL_PLANE_FALL_NULL,
-                    }
+                    };
+                    return;
                 }
 
                 if state.setting.jump.press() {
-                    player.speed += plane * Self::WALL_PLANE_JUMP_FORCE;
-                    player.speed.y = Self::SPEED_JUMP;
+                    player.speed += plane * Self::WALL_PLANE_JUMP_FORCE * 0.5;
+                    player.speed.y = Self::SPEED_JUMP * 1.25;
                     player.state = Self::Walk {
                         time: Self::WALL_PLANE_JUMP_TIME,
                         jump: 0.0,
                         null: Self::WALL_PLANE_JUMP_NULL,
-                    }
+                    };
+                    return;
+                }
+
+                if state.setting.duck.press() {
+                    player.speed += plane * Self::WALL_PLANE_JUMP_FORCE * 2.0;
+                    player.state = Self::Walk {
+                        time: Self::WALL_PLANE_JUMP_TIME,
+                        jump: 0.0,
+                        null: Self::WALL_PLANE_JUMP_NULL,
+                    };
                 }
             }
         }
