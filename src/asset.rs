@@ -55,7 +55,8 @@ use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct Asset {
-    pub model: HashMap<String, Model>,
+    model: HashMap<String, Model>,
+    font: HashMap<String, Font>,
 }
 
 impl Asset {
@@ -87,6 +88,25 @@ impl Asset {
     pub fn get_model(&self, name: &str) -> anyhow::Result<&Model> {
         self.model.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_model(): Could not find asset \"{name}\"."
+        )))
+    }
+
+    pub fn set_font(
+        &mut self,
+        handle: &mut RaylibHandle,
+        thread: &RaylibThread,
+        name: &str,
+    ) -> anyhow::Result<&Font> {
+        let font = handle.load_font(thread, name)?;
+
+        self.font.insert(name.to_string(), font);
+
+        self.get_font(name)
+    }
+
+    pub fn get_font(&self, name: &str) -> anyhow::Result<&Font> {
+        self.font.get(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_font(): Could not find asset \"{name}\"."
         )))
     }
 }

@@ -55,6 +55,8 @@ mod player;
 mod setting;
 mod state;
 mod utility;
+mod window;
+//mod world;
 
 //================================================================
 
@@ -73,16 +75,26 @@ fn main() -> anyhow::Result<()> {
 
     //let (mut handle, thread) = raylib::init().size(1024, 768).title("Mettle").build();
     let (mut handle, thread) = raylib::init()
-        .size(1920, 1080)
-        .fullscreen()
+        .size(1024, 768)
+        .resizable()
         .title("Mettle")
         .build();
 
+    if state.setting.screen_full {
+        handle.toggle_borderless_windowed();
+    }
+
+    handle.set_exit_key(None);
     handle.set_target_fps(state.setting.screen_rate);
-    handle.disable_cursor();
+    //handle.disable_cursor();
 
     //================================================================
 
     state.initialize(&mut handle, &thread)?;
-    state.main(&mut handle, &thread)
+    state.main(&mut handle, &thread)?;
+
+    // weird drop bug in raylib-rs will cause state to drop incorrectly.
+    drop(state);
+
+    Ok(())
 }

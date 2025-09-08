@@ -121,6 +121,14 @@ impl View {
     }
 }
 
+pub fn ease_in_out_cubic(x: f32) -> f32 {
+    if x < 0.5 {
+        4.0 * x * x * x
+    } else {
+        1.0 - (-2.0 * x + 2.0).powf(3.0) / 2.0
+    }
+}
+
 pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {
     // port of raymath's function of the same name.
 

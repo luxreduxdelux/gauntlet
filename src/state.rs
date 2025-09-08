@@ -53,6 +53,7 @@ use crate::entity::*;
 use crate::physical::*;
 use crate::player::*;
 use crate::setting::*;
+use crate::window::*;
 
 //================================================================
 
@@ -61,7 +62,10 @@ use raylib::prelude::*;
 //================================================================
 
 pub struct State {
+    pub close: bool,
     pub asset: Asset,
+    pub window: Window,
+    pub layout: Layout,
     pub setting: Setting,
     pub entity_list: Vec<Box<dyn Entity>>,
     pub camera_3d: Camera3D,
@@ -76,7 +80,10 @@ impl State {
 
     pub fn new() -> Self {
         Self {
+            close: bool::default(),
             asset: Asset::default(),
+            window: Window::default(),
+            layout: Layout::default(),
             setting: Setting::default(),
             entity_list: Default::default(),
             camera_3d: Camera3D::perspective(
@@ -98,6 +105,7 @@ impl State {
         thread: &RaylibThread,
     ) -> anyhow::Result<()> {
         self.asset.set_model(handle, thread, "data/level.glb")?;
+        self.window.initialize(handle, thread)?;
 
         let player = Box::new(Player::new(self)?);
         self.entity_list.push(player);
@@ -106,7 +114,7 @@ impl State {
     }
 
     pub fn main(&mut self, handle: &mut RaylibHandle, thread: &RaylibThread) -> anyhow::Result<()> {
-        while !handle.window_should_close() {
+        while !handle.window_should_close() && !self.close {
             if handle.is_key_pressed(KeyboardKey::KEY_F1) {
                 *self = State::new();
                 self.initialize(handle, thread)?;
@@ -161,6 +169,8 @@ impl State {
                         entity.draw_2d(&mut *state, &mut draw_2d)?;
                     }
                 }
+
+                Layout::draw(self, &mut draw_2d)?;
             }
         }
 

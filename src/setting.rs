@@ -60,6 +60,8 @@ pub struct Setting {
     pub screen_sync: bool,
     pub screen_rate: u32,
     pub mouse_speed: f32,
+    pub volume_sound: f32,
+    pub volume_music: f32,
     pub move_x_a: Input,
     pub move_x_b: Input,
     pub move_z_a: Input,
@@ -89,14 +91,16 @@ impl Default for Setting {
                 screen_sync: false,
                 screen_rate: 60,
                 mouse_speed: 1.0,
-                move_x_a: Input::Board(KeyboardKey::KEY_W as u32),
-                move_x_b: Input::Board(KeyboardKey::KEY_S as u32),
-                move_z_a: Input::Board(KeyboardKey::KEY_A as u32),
-                move_z_b: Input::Board(KeyboardKey::KEY_D as u32),
-                jump: Input::Board(KeyboardKey::KEY_SPACE as u32),
-                duck: Input::Mouse(MouseButton::MOUSE_BUTTON_EXTRA as u32),
-                fire_a: Input::Mouse(MouseButton::MOUSE_BUTTON_LEFT as u32),
-                fire_b: Input::Mouse(MouseButton::MOUSE_BUTTON_RIGHT as u32),
+                volume_sound: 1.0,
+                volume_music: 1.0,
+                move_x_a: Input::new_board(KeyboardKey::KEY_W as u32),
+                move_x_b: Input::new_board(KeyboardKey::KEY_S as u32),
+                move_z_a: Input::new_board(KeyboardKey::KEY_A as u32),
+                move_z_b: Input::new_board(KeyboardKey::KEY_D as u32),
+                jump: Input::new_board(KeyboardKey::KEY_SPACE as u32),
+                duck: Input::new_mouse(MouseButton::MOUSE_BUTTON_EXTRA as u32),
+                fire_a: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT as u32),
+                fire_b: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT as u32),
             }
         }
     }
@@ -113,13 +117,41 @@ impl Drop for Setting {
 // there is a build failure on raylib-rs 5.5.1 when using the "serde" feature
 // that supposedly does implement Serialize for KeyboardKey/etc; but it does not
 // compile successfully as of 5/9/2025.
-#[derive(Serialize, Deserialize, Copy, Clone)]
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub enum Input {
-    Board(u32),
-    Mouse(u32),
+    Board {
+        key: u32,
+        #[serde(skip)]
+        press: bool,
+        #[serde(skip)]
+        release: bool,
+    },
+    Mouse {
+        key: u32,
+        #[serde(skip)]
+        press: bool,
+        #[serde(skip)]
+        release: bool,
+    },
 }
 
 impl Input {
+    fn new_board(key: u32) -> Input {
+        Input::Board {
+            key,
+            press: false,
+            release: false,
+        }
+    }
+
+    fn new_mouse(key: u32) -> Input {
+        Input::Mouse {
+            key,
+            press: false,
+            release: false,
+        }
+    }
+
     fn to_board(value: u32) -> KeyboardKey {
         unsafe { std::mem::transmute(value) }
     }
@@ -128,31 +160,75 @@ impl Input {
         unsafe { std::mem::transmute(value) }
     }
 
+    pub fn poll(&mut self, handle: &RaylibHandle) {
+        match self {
+            Input::Board {
+                key,
+                press,
+                release,
+            } => {
+                if handle.is_key_pressed(Self::to_board(*key)) {
+                    *press = true;
+                }
+
+                if handle.is_key_released(Self::to_board(*key)) {
+                    *release = true;
+                }
+            }
+            Input::Mouse {
+                key,
+                press,
+                release,
+            } => {
+                if handle.is_mouse_button_pressed(Self::to_mouse(*key)) {
+                    *press = true;
+                }
+
+                if handle.is_mouse_button_released(Self::to_mouse(*key)) {
+                    *release = true;
+                }
+            }
+        }
+    }
+
+    pub fn wipe(&mut self) {
+        match self {
+            Input::Board { press, release, .. } => {
+                *press = false;
+                *release = false;
+            }
+            Input::Mouse { press, release, .. } => {
+                *press = false;
+                *release = false;
+            }
+        }
+    }
+
     pub fn up(&self, handle: &RaylibHandle) -> bool {
         match self {
-            Input::Board(board) => handle.is_key_up(Self::to_board(*board)),
-            Input::Mouse(mouse) => handle.is_mouse_button_up(Self::to_mouse(*mouse)),
+            Input::Board { key, .. } => handle.is_key_up(Self::to_board(*key)),
+            Input::Mouse { key, .. } => handle.is_mouse_button_up(Self::to_mouse(*key)),
         }
     }
 
     pub fn down(&self, handle: &RaylibHandle) -> bool {
         match self {
-            Input::Board(board) => handle.is_key_down(Self::to_board(*board)),
-            Input::Mouse(mouse) => handle.is_mouse_button_down(Self::to_mouse(*mouse)),
+            Input::Board { key, .. } => handle.is_key_down(Self::to_board(*key)),
+            Input::Mouse { key, .. } => handle.is_mouse_button_down(Self::to_mouse(*key)),
         }
     }
 
-    pub fn press(&self, handle: &RaylibHandle) -> bool {
+    pub fn press(&self) -> bool {
         match self {
-            Input::Board(board) => handle.is_key_pressed(Self::to_board(*board)),
-            Input::Mouse(mouse) => handle.is_mouse_button_pressed(Self::to_mouse(*mouse)),
+            Input::Board { press, .. } => *press,
+            Input::Mouse { press, .. } => *press,
         }
     }
 
-    pub fn release(&self, handle: &RaylibHandle) -> bool {
+    pub fn release(&mut self) -> bool {
         match self {
-            Input::Board(board) => handle.is_key_released(Self::to_board(*board)),
-            Input::Mouse(mouse) => handle.is_mouse_button_released(Self::to_mouse(*mouse)),
+            Input::Board { release, .. } => *release,
+            Input::Mouse { release, .. } => *release,
         }
     }
 }
