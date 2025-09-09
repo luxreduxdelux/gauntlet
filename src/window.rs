@@ -53,7 +53,8 @@
 // cube should also animate, rotating like a rubik's cube
 
 use crate::asset::*;
-use crate::state::State;
+use crate::setting::*;
+use crate::state::*;
 use crate::utility::*;
 
 //================================================================
@@ -92,6 +93,7 @@ pub struct Window<'a> {
     asset: Asset<'a>,
     point: Vector2,
     mouse: Vector2,
+    focus: Option<String>,
 }
 
 impl<'a> Window<'a> {
@@ -143,11 +145,22 @@ impl<'a> Window<'a> {
         text: &str,
         shape: Rectangle,
     ) -> anyhow::Result<Response> {
-        let hover = shape.check_collision_point_rec(self.mouse);
+        let focus = if let Some(focus) = &self.focus
+            && focus == text
+        {
+            true
+        } else {
+            false
+        };
+        let hover = shape.check_collision_point_rec(self.mouse) || focus;
         let click = handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
 
         let entry = self.widget.entry(text.to_string()).or_default();
         let frame = handle.get_frame_time();
+
+        if self.focus.is_some() && !focus {
+            return Ok(Response::new(false, false, *entry));
+        }
 
         if hover {
             entry.delta += frame * 8.0;
@@ -289,6 +302,124 @@ impl<'a> Window<'a> {
         if response.click {
             self.asset.get_sound("data/audio/click.ogg")?.play();
             *value = !*value;
+        }
+
+        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+
+        Ok(response)
+    }
+
+    pub fn slider(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        value: &mut f32,
+        bound: (f32, f32, f32),
+    ) -> anyhow::Result<Response> {
+        let key = format!("{:.2}", value);
+        let font = self.font_label()?;
+        let size = font.measure_text(&key, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
+
+        self.draw_border(
+            draw,
+            Rectangle::new(
+                self.point.x,
+                self.point.y,
+                size.x + 16.0,
+                Self::BUTTON_SHAPE_Y,
+            ),
+            &key,
+            1.0,
+        )?;
+
+        let response = self.draw_border_text(
+            draw,
+            text,
+            Rectangle::new(
+                self.point.x + size.x + 24.0,
+                self.point.y,
+                16.0,
+                Self::BUTTON_SHAPE_Y,
+            ),
+        )?;
+
+        if response.click {
+            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.focus = Some(text.to_string());
+        }
+
+        if let Some(focus) = &self.focus
+            && focus == text
+        {
+            let min = self.point.x + size.x + 24.0;
+            let max = min + 128.0;
+            let percent = ((self.mouse.x - min) / (max - min)).clamp(0.0, 1.0);
+            let percent = percent * (bound.1 - bound.0) + bound.0;
+            let percent = (percent / bound.2).floor() * bound.2;
+
+            *value = percent;
+
+            if draw.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
+                self.focus = None;
+            }
+        }
+
+        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+
+        Ok(response)
+    }
+
+    pub fn action(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        value: &mut Input,
+    ) -> anyhow::Result<Response> {
+        let key = format!("{}", value);
+
+        let font = self.font_label()?;
+        let size = font.measure_text(&key, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
+        let size = (size.x / 7.0).ceil() * 7.0;
+
+        self.draw_border(
+            draw,
+            Rectangle::new(
+                self.point.x,
+                self.point.y,
+                size + 16.0,
+                Self::BUTTON_SHAPE_Y,
+            ),
+            &key,
+            1.0,
+        )?;
+
+        let response = self.draw_border_text(
+            draw,
+            text,
+            Rectangle::new(
+                self.point.x + size + 24.0,
+                self.point.y,
+                16.0,
+                Self::BUTTON_SHAPE_Y,
+            ),
+        )?;
+
+        if let Some(focus) = &self.focus
+            && focus == text
+        {
+            if let Some(board) = draw.get_key_pressed() {
+                *value = Input::new_board(board as u32);
+                self.focus = None;
+            }
+            if let Some(mouse) = Input::get_mouse_pressed(draw) {
+                *value = Input::new_mouse(mouse as u32);
+                self.focus = None;
+            }
+        }
+
+        if response.click {
+            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.focus = Some(text.to_string());
         }
 
         self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
@@ -460,6 +591,48 @@ impl Layout {
     }
 
     fn begin(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(handle, state.in_game);
+
+        if !state.in_game {
+            state.new_game(handle)?;
+            return Ok(());
+        }
+
+        let mut layout = None;
+        let mut accept = false;
+
+        {
+            let mut draw = handle.begin_mode2D(Camera2D {
+                offset: Vector2::zero(),
+                target: Vector2::zero(),
+                rotation: 0.0,
+                zoom: 1.0,
+            });
+
+            state.window.draw(&mut draw, |window, draw| {
+                Self::draw_head_foot(window, draw, state.in_game, "begin")?;
+
+                window.point = Self::INITIAL_POINT;
+
+                if window.button(draw, "accept")?.click {
+                    accept = true;
+                };
+                if window.button(draw, "return")?.click {
+                    layout = Some(Self::Main);
+                };
+
+                Ok(())
+            })?;
+        }
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, layout);
+        }
+
+        if accept {
+            state.new_game(handle)?;
+        }
+
         Ok(())
     }
 
@@ -481,7 +654,7 @@ impl Layout {
             window.point = Self::INITIAL_POINT;
 
             if window
-                .toggle(draw, "frame full", &mut state.setting.screen_full)?
+                .toggle(draw, "screen full", &mut state.setting.screen_full)?
                 .click
             {
                 if draw.is_window_fullscreen() {
@@ -492,7 +665,44 @@ impl Layout {
 
                 draw.toggle_fullscreen();
             }
-            window.toggle(draw, "frame sync", &mut state.setting.screen_sync)?;
+            window.slider(
+                draw,
+                "screen field",
+                &mut state.setting.screen_field,
+                (60.0, 120.0, 1.0),
+            )?;
+            window.slider(
+                draw,
+                "screen shake",
+                &mut state.setting.screen_shake,
+                (0.0, 2.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "mouse speed",
+                &mut state.setting.mouse_speed,
+                (0.0, 2.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "sound volume",
+                &mut state.setting.volume_sound,
+                (0.0, 1.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "music volume",
+                &mut state.setting.volume_music,
+                (0.0, 1.0, 0.1),
+            )?;
+            window.action(draw, "move x+", &mut state.setting.move_x_a)?;
+            window.action(draw, "move x-", &mut state.setting.move_x_b)?;
+            window.action(draw, "move z+", &mut state.setting.move_z_a)?;
+            window.action(draw, "move z-", &mut state.setting.move_z_b)?;
+            window.action(draw, "jump", &mut state.setting.jump)?;
+            window.action(draw, "duck", &mut state.setting.duck)?;
+            window.action(draw, "fire a", &mut state.setting.fire_a)?;
+            window.action(draw, "fire b", &mut state.setting.fire_b)?;
 
             if window.button(draw, "return")?.click {
                 layout = Some(Self::Main);

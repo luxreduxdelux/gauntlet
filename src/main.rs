@@ -81,11 +81,12 @@ fn main() -> anyhow::Result<()> {
         .build();
 
     if state.setting.screen_full {
-        handle.toggle_borderless_windowed();
+        handle.set_window_size(1920, 1080);
+        handle.toggle_fullscreen();
     }
 
     handle.set_exit_key(None);
-    handle.set_target_fps(state.setting.screen_rate);
+    handle.set_target_fps(state.setting.screen_rate as u32);
 
     //================================================================
 

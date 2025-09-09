@@ -50,15 +50,15 @@
 
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Serialize, Deserialize)]
 pub struct Setting {
-    pub screen_field: u32,
+    pub screen_full: bool,
+    pub screen_field: f32,
     pub screen_shake: f32,
     pub screen_tilt: f32,
-    pub screen_full: bool,
-    pub screen_sync: bool,
-    pub screen_rate: u32,
+    pub screen_rate: f32,
     pub mouse_speed: f32,
     pub volume_sound: f32,
     pub volume_music: f32,
@@ -84,12 +84,11 @@ impl Default for Setting {
             data
         } else {
             Self {
-                screen_field: 90,
+                screen_full: false,
+                screen_field: 90.0,
                 screen_shake: 1.0,
                 screen_tilt: 1.0,
-                screen_full: false,
-                screen_sync: false,
-                screen_rate: 60,
+                screen_rate: 60.0,
                 mouse_speed: 1.0,
                 volume_sound: 1.0,
                 volume_music: 1.0,
@@ -135,8 +134,146 @@ pub enum Input {
     },
 }
 
+impl Display for Input {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Self::Board { key, .. } => {
+                let key = Self::to_board(*key);
+
+                match key {
+                    KeyboardKey::KEY_NULL => "null",
+                    KeyboardKey::KEY_APOSTROPHE => "'",
+                    KeyboardKey::KEY_COMMA => ",",
+                    KeyboardKey::KEY_MINUS => "-",
+                    KeyboardKey::KEY_PERIOD => ".",
+                    KeyboardKey::KEY_SLASH => "/",
+                    KeyboardKey::KEY_ZERO => "0",
+                    KeyboardKey::KEY_ONE => "1",
+                    KeyboardKey::KEY_TWO => "2",
+                    KeyboardKey::KEY_THREE => "3",
+                    KeyboardKey::KEY_FOUR => "4",
+                    KeyboardKey::KEY_FIVE => "5",
+                    KeyboardKey::KEY_SIX => "6",
+                    KeyboardKey::KEY_SEVEN => "7",
+                    KeyboardKey::KEY_EIGHT => "8",
+                    KeyboardKey::KEY_NINE => "9",
+                    KeyboardKey::KEY_SEMICOLON => ";",
+                    KeyboardKey::KEY_EQUAL => "=",
+                    KeyboardKey::KEY_A => "a",
+                    KeyboardKey::KEY_B => "b",
+                    KeyboardKey::KEY_C => "c",
+                    KeyboardKey::KEY_D => "d",
+                    KeyboardKey::KEY_E => "e",
+                    KeyboardKey::KEY_F => "f",
+                    KeyboardKey::KEY_G => "g",
+                    KeyboardKey::KEY_H => "h",
+                    KeyboardKey::KEY_I => "i",
+                    KeyboardKey::KEY_J => "j",
+                    KeyboardKey::KEY_K => "k",
+                    KeyboardKey::KEY_L => "l",
+                    KeyboardKey::KEY_M => "m",
+                    KeyboardKey::KEY_N => "n",
+                    KeyboardKey::KEY_O => "o",
+                    KeyboardKey::KEY_P => "p",
+                    KeyboardKey::KEY_Q => "q",
+                    KeyboardKey::KEY_R => "r",
+                    KeyboardKey::KEY_S => "s",
+                    KeyboardKey::KEY_T => "t",
+                    KeyboardKey::KEY_U => "u",
+                    KeyboardKey::KEY_V => "v",
+                    KeyboardKey::KEY_W => "w",
+                    KeyboardKey::KEY_X => "x",
+                    KeyboardKey::KEY_Y => "y",
+                    KeyboardKey::KEY_Z => "z",
+                    KeyboardKey::KEY_LEFT_BRACKET => "{",
+                    KeyboardKey::KEY_BACKSLASH => "\\",
+                    KeyboardKey::KEY_RIGHT_BRACKET => "}",
+                    KeyboardKey::KEY_GRAVE => "`",
+                    KeyboardKey::KEY_SPACE => "space",
+                    KeyboardKey::KEY_ESCAPE => "escape",
+                    KeyboardKey::KEY_ENTER => "enter",
+                    KeyboardKey::KEY_TAB => "tabulation",
+                    KeyboardKey::KEY_BACKSPACE => "backspace",
+                    KeyboardKey::KEY_INSERT => "insert",
+                    KeyboardKey::KEY_DELETE => "delete",
+                    KeyboardKey::KEY_RIGHT => "right",
+                    KeyboardKey::KEY_LEFT => "left",
+                    KeyboardKey::KEY_DOWN => "down",
+                    KeyboardKey::KEY_UP => "up",
+                    KeyboardKey::KEY_PAGE_UP => "page up",
+                    KeyboardKey::KEY_PAGE_DOWN => "page down",
+                    KeyboardKey::KEY_HOME => "home",
+                    KeyboardKey::KEY_END => "end",
+                    KeyboardKey::KEY_CAPS_LOCK => "case lock",
+                    KeyboardKey::KEY_SCROLL_LOCK => "scroll lock",
+                    KeyboardKey::KEY_NUM_LOCK => "number lock",
+                    KeyboardKey::KEY_PRINT_SCREEN => "print screen",
+                    KeyboardKey::KEY_PAUSE => "pause",
+                    KeyboardKey::KEY_F1 => "f1",
+                    KeyboardKey::KEY_F2 => "f2",
+                    KeyboardKey::KEY_F3 => "f3",
+                    KeyboardKey::KEY_F4 => "f4",
+                    KeyboardKey::KEY_F5 => "f5",
+                    KeyboardKey::KEY_F6 => "f6",
+                    KeyboardKey::KEY_F7 => "f7",
+                    KeyboardKey::KEY_F8 => "f8",
+                    KeyboardKey::KEY_F9 => "f9",
+                    KeyboardKey::KEY_F10 => "f10",
+                    KeyboardKey::KEY_F11 => "f11",
+                    KeyboardKey::KEY_F12 => "f12",
+                    KeyboardKey::KEY_LEFT_SHIFT => "l. shift",
+                    KeyboardKey::KEY_LEFT_CONTROL => "l. control",
+                    KeyboardKey::KEY_LEFT_ALT => "l. alternate",
+                    KeyboardKey::KEY_LEFT_SUPER => "l. super",
+                    KeyboardKey::KEY_RIGHT_SHIFT => "r. shift",
+                    KeyboardKey::KEY_RIGHT_CONTROL => "r. control",
+                    KeyboardKey::KEY_RIGHT_ALT => "r. alternate",
+                    KeyboardKey::KEY_RIGHT_SUPER => "r. super",
+                    KeyboardKey::KEY_KB_MENU => "menu",
+                    KeyboardKey::KEY_KP_0 => "pad 0",
+                    KeyboardKey::KEY_KP_1 => "pad 1",
+                    KeyboardKey::KEY_KP_2 => "pad 2",
+                    KeyboardKey::KEY_KP_3 => "pad 3",
+                    KeyboardKey::KEY_KP_4 => "pad 4",
+                    KeyboardKey::KEY_KP_5 => "pad 5",
+                    KeyboardKey::KEY_KP_6 => "pad 6",
+                    KeyboardKey::KEY_KP_7 => "pad 7",
+                    KeyboardKey::KEY_KP_8 => "pad 8",
+                    KeyboardKey::KEY_KP_9 => "pad 9",
+                    KeyboardKey::KEY_KP_DECIMAL => "pad .",
+                    KeyboardKey::KEY_KP_DIVIDE => "pad /",
+                    KeyboardKey::KEY_KP_MULTIPLY => "pad *",
+                    KeyboardKey::KEY_KP_SUBTRACT => "pad -",
+                    KeyboardKey::KEY_KP_ADD => "pad +",
+                    KeyboardKey::KEY_KP_ENTER => "pad enter",
+                    KeyboardKey::KEY_KP_EQUAL => "pad =",
+                    KeyboardKey::KEY_BACK => "back",
+                    KeyboardKey::KEY_MENU => "menu",
+                    KeyboardKey::KEY_VOLUME_UP => "volume up",
+                    KeyboardKey::KEY_VOLUME_DOWN => "volume down",
+                }
+            }
+            Self::Mouse { key, .. } => {
+                let key = Self::to_mouse(*key);
+
+                match key {
+                    MouseButton::MOUSE_BUTTON_LEFT => "mouse l.",
+                    MouseButton::MOUSE_BUTTON_RIGHT => "mouse r.",
+                    MouseButton::MOUSE_BUTTON_MIDDLE => "mouse middle",
+                    MouseButton::MOUSE_BUTTON_SIDE => "mouse side",
+                    MouseButton::MOUSE_BUTTON_EXTRA => "mouse extra",
+                    MouseButton::MOUSE_BUTTON_FORWARD => "mouse forward",
+                    MouseButton::MOUSE_BUTTON_BACK => "mouse back",
+                }
+            }
+        };
+
+        f.write_str(string)
+    }
+}
+
 impl Input {
-    fn new_board(key: u32) -> Input {
+    pub fn new_board(key: u32) -> Input {
         Input::Board {
             key,
             press: false,
@@ -144,12 +281,32 @@ impl Input {
         }
     }
 
-    fn new_mouse(key: u32) -> Input {
+    pub fn new_mouse(key: u32) -> Input {
         Input::Mouse {
             key,
             press: false,
             release: false,
         }
+    }
+
+    pub fn get_mouse_pressed(handle: &RaylibHandle) -> Option<MouseButton> {
+        let list = [
+            MouseButton::MOUSE_BUTTON_LEFT,
+            MouseButton::MOUSE_BUTTON_RIGHT,
+            MouseButton::MOUSE_BUTTON_MIDDLE,
+            MouseButton::MOUSE_BUTTON_SIDE,
+            MouseButton::MOUSE_BUTTON_EXTRA,
+            MouseButton::MOUSE_BUTTON_FORWARD,
+            MouseButton::MOUSE_BUTTON_BACK,
+        ];
+
+        for button in list {
+            if handle.is_mouse_button_pressed(button) {
+                return Some(button);
+            }
+        }
+
+        None
     }
 
     fn to_board(value: u32) -> KeyboardKey {

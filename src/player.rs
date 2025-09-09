@@ -55,6 +55,7 @@ use crate::entity::*;
 use crate::setting::*;
 use crate::state::*;
 use crate::utility::*;
+use crate::window::*;
 
 //================================================================
 
@@ -179,8 +180,11 @@ impl Entity for Player {
 
         let mouse = draw.get_mouse_delta();
 
-        self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
-        self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
+        // remove when using render-target.
+        if matches!(state.layout, Layout::None) {
+            self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
+            self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
+        }
         self.angle.x %= 359.0;
         self.angle.y = self.angle.y.clamp(Self::ANGLE_MIN, Self::ANGLE_MAX);
 
@@ -343,7 +347,7 @@ impl PlayerState {
                         player.speed.y = 0.0;
                     }
 
-                    if state.setting.jump.press() {
+                    if state.setting.jump.down(handle) {
                         player.speed.y = Self::SPEED_JUMP;
                         *jump = 0.5;
                     }
@@ -611,7 +615,7 @@ impl PlayerState {
                             0.0,
                         ),
                     Vector3::new(0.0, jump * 0.1, tilt),
-                    90.0,
+                    state.setting.screen_field,
                 )
             }
             Self::Dash { .. } => {
@@ -624,18 +628,18 @@ impl PlayerState {
                 View::new(
                     Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0),
                     Vector3::new(0.0, x, z),
-                    100.0,
+                    state.setting.screen_field + 10.0,
                 )
             }
             Self::Duck { .. } => View::new(
                 Vector3::new(0.0, 0.25 - Player::CUBE_SHAPE.y, 0.0),
                 Vector3::new(0.0, 0.1, 0.0),
-                100.0,
+                state.setting.screen_field + 10.0,
             ),
             Self::Slam { .. } => View::new(
                 Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0),
                 Vector3::new(0.0, 0.0, 0.0),
-                100.0,
+                state.setting.screen_field + 10.0,
             ),
             Self::Wall { direction, .. } => {
                 let speed = player.speed.length() / 8.0;
@@ -645,7 +649,7 @@ impl PlayerState {
                 View::new(
                     Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON + cos, sin),
                     Vector3::new(0.0, 0.0, direction * 2.5),
-                    110.0,
+                    state.setting.screen_field + 10.0,
                 )
             }
         }

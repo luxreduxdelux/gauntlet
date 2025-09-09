@@ -102,7 +102,7 @@ impl<'a> State<'a> {
             window: Window::default(),
             layout: Layout::default(),
             setting: Setting::default(),
-            in_game: true,
+            in_game: false,
             entity_list: Default::default(),
             camera_3d: Camera3D::perspective(
                 Vector3::default(),
@@ -126,6 +126,18 @@ impl<'a> State<'a> {
         self.asset
             .set_model(handle, thread, "data/level/level.glb")?;
         self.window.initialize(handle, thread, audio)?;
+
+        Ok(())
+    }
+
+    pub fn new_game(&mut self, handle: &mut RaylibHandle) -> anyhow::Result<()> {
+        handle.disable_cursor();
+
+        self.in_game = true;
+        self.entity_list.clear();
+        self.physical = Physical::default();
+        self.layout = Layout::None;
+
         let player = Box::new(Player::new(self)?);
         self.entity_list.push(player);
 
