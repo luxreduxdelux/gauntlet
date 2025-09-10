@@ -48,82 +48,60 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::entity::*;
 use crate::state::*;
-
-//================================================================
+use crate::world::*;
 
 use raylib::prelude::*;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
-//================================================================
-
-#[derive(Default)]
-pub struct Asset<'a> {
-    model: HashMap<String, Model>,
-    sound: HashMap<String, Sound<'a>>,
-    font: HashMap<String, Font>,
+#[derive(Serialize, Deserialize)]
+pub struct Tina {
+    point: Vector3,
+    angle: Vector3,
+    speed: Vector3,
 }
 
-impl<'a> Asset<'a> {
-    pub fn set_model(&mut self, context: &mut Context, name: &str) -> anyhow::Result<&Model> {
-        let mut model = context.handle.load_model(&context.thread, name)?;
-
-        // create mip-map.
-        for material in model.materials_mut() {
-            for map in material.maps_mut() {
-                let texture = map.texture_mut();
-
-                if texture.id > 0 {
-                    texture.gen_texture_mipmaps();
-                    texture
-                        .set_texture_filter(&context.thread, TextureFilter::TEXTURE_FILTER_POINT);
-                }
-            }
-        }
-
-        self.model.insert(name.to_string(), model);
-
-        self.get_model(name)
-    }
-
-    pub fn get_model(&self, name: &str) -> anyhow::Result<&Model> {
-        self.model.get(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_model(): Could not find asset \"{name}\"."
-        )))
-    }
-
-    pub fn set_sound(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Sound<'a>> {
-        let sound = context.audio.new_sound(name)?;
-
-        self.sound.insert(name.to_string(), sound);
-
-        self.get_sound(name)
-    }
-
-    pub fn get_sound(&self, name: &str) -> anyhow::Result<&Sound<'a>> {
-        self.sound.get(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_sound(): Could not find asset \"{name}\"."
-        )))
-    }
-
-    pub fn set_font(
-        &mut self,
+impl Tina {
+    pub fn new(
+        state: &mut State,
         context: &mut Context,
-        name: &str,
-        size: i32,
-    ) -> anyhow::Result<&Font> {
-        let font = context
-            .handle
-            .load_font_ex(&context.thread, name, size, None)?;
+        world: &mut World,
+    ) -> anyhow::Result<Self> {
+        state.asset.set_model(context, "data/video/tina.glb")?;
 
-        self.font.insert(name.to_string(), font);
+        Ok(Self {
+            point: Vector3::up() * 2.0,
+            angle: Vector3::default(),
+            speed: Vector3::default(),
+        })
+    }
+}
 
-        self.get_font(name)
+#[typetag::serde]
+impl Entity for Tina {
+    fn get_point(&mut self) -> &mut Vector3 {
+        &mut self.point
     }
 
-    pub fn get_font(&self, name: &str) -> anyhow::Result<&Font> {
-        self.font.get(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_font(): Could not find asset \"{name}\"."
-        )))
+    fn get_angle(&mut self) -> &mut Vector3 {
+        &mut self.angle
+    }
+
+    fn get_speed(&mut self) -> &mut Vector3 {
+        &mut self.speed
+    }
+
+    fn draw_3d(
+        &mut self,
+        state: &mut State,
+        draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        let model = state.asset.get_model("data/video/tina.glb")?;
+
+        draw.draw_model(model, self.point, 0.5, Color::WHITE);
+
+        Ok(())
     }
 }

@@ -67,7 +67,8 @@ use std::f32;
 
 pub struct Response {
     pub hover: bool,
-    pub click: bool,
+    pub press: bool,
+    pub release: bool,
     pub widget: Widget,
 }
 
@@ -78,10 +79,11 @@ pub struct Widget {
 }
 
 impl Response {
-    fn new(hover: bool, click: bool, widget: Widget) -> Self {
+    fn new(hover: bool, press: bool, release: bool, widget: Widget) -> Self {
         Self {
             hover,
-            click,
+            press,
+            release,
             widget,
         }
     }
@@ -100,18 +102,13 @@ impl<'a> Window<'a> {
     const BUTTON_SHAPE_Y: f32 = 32.0;
     const FONT_SPACE: f32 = 1.0;
 
-    pub fn initialize(
-        &mut self,
-        handle: &mut RaylibHandle,
-        thread: &RaylibThread,
-        audio: &'a RaylibAudio,
-    ) -> anyhow::Result<()> {
+    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
         self.asset
-            .set_font(handle, thread, "data/video/font_label.ttf", 32)?;
+            .set_font(context, "data/video/font_label.ttf", 32)?;
         self.asset
-            .set_font(handle, thread, "data/video/font_title.ttf", 56)?;
-        self.asset.set_sound(audio, "data/audio/hover.ogg")?;
-        self.asset.set_sound(audio, "data/audio/click.ogg")?;
+            .set_font(context, "data/video/font_title.ttf", 56)?;
+        self.asset.set_sound(context, "data/audio/hover.ogg")?;
+        self.asset.set_sound(context, "data/audio/click.ogg")?;
 
         Ok(())
     }
@@ -153,13 +150,14 @@ impl<'a> Window<'a> {
             false
         };
         let hover = shape.check_collision_point_rec(self.mouse) || focus;
-        let click = handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+        let press = handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
+        let release = handle.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT);
 
         let entry = self.widget.entry(text.to_string()).or_default();
         let frame = handle.get_frame_time();
 
         if self.focus.is_some() && !focus {
-            return Ok(Response::new(false, false, *entry));
+            return Ok(Response::new(false, false, false, *entry));
         }
 
         if hover {
@@ -177,7 +175,12 @@ impl<'a> Window<'a> {
 
         entry.delta = entry.delta.clamp(0.0, 1.0);
 
-        Ok(Response::new(hover, hover && click, *entry))
+        Ok(Response::new(
+            hover,
+            hover && press,
+            hover && release,
+            *entry,
+        ))
     }
 
     pub fn draw<
@@ -238,12 +241,10 @@ impl<'a> Window<'a> {
         shape: Rectangle,
     ) -> anyhow::Result<Response> {
         let font = self.font_label()?;
-        let width = font.measure_text(text, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
-        let mut size = Rectangle::new(shape.x, shape.y, shape.width + width.x, shape.height);
+        let size = font.measure_text(text, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
+        let size = Rectangle::new(shape.x, shape.y, shape.width + size.x, shape.height);
         let response = self.response(draw, text, size)?;
         let delta = ease_in_out_cubic(response.widget.delta);
-
-        size.x += delta * 8.0;
 
         self.draw_border(draw, size, text, delta)?;
 
@@ -261,7 +262,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if response.click {
+        if response.press {
             self.asset.get_sound("data/audio/click.ogg")?.play();
         }
 
@@ -299,7 +300,7 @@ impl<'a> Window<'a> {
             ),
         )?;
 
-        if response.click {
+        if response.press {
             self.asset.get_sound("data/audio/click.ogg")?.play();
             *value = !*value;
         }
@@ -343,7 +344,7 @@ impl<'a> Window<'a> {
             ),
         )?;
 
-        if response.click {
+        if response.press {
             self.asset.get_sound("data/audio/click.ogg")?.play();
             self.focus = Some(text.to_string());
         }
@@ -351,13 +352,18 @@ impl<'a> Window<'a> {
         if let Some(focus) = &self.focus
             && focus == text
         {
-            let min = self.point.x + size.x + 24.0;
-            let max = min + 128.0;
-            let percent = ((self.mouse.x - min) / (max - min)).clamp(0.0, 1.0);
-            let percent = percent * (bound.1 - bound.0) + bound.0;
-            let percent = (percent / bound.2).floor() * bound.2;
+            let delta = draw.get_mouse_delta().x;
 
-            *value = percent;
+            // fix for numerical instability.
+            if delta.abs() > 0.0 {
+                let min = self.point.x + size.x + 24.0;
+                let max = min + 128.0;
+                let percent = ((self.mouse.x - min) / (max - min)).clamp(0.0, 1.0);
+                let percent = percent * (bound.1 - bound.0) + bound.0;
+                let percent = (percent / bound.2).floor() * bound.2;
+
+                *value = percent;
+            }
 
             if draw.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
                 self.focus = None;
@@ -417,7 +423,7 @@ impl<'a> Window<'a> {
             }
         }
 
-        if response.click {
+        if response.press {
             self.asset.get_sound("data/audio/click.ogg")?.play();
             self.focus = Some(text.to_string());
         }
@@ -428,11 +434,8 @@ impl<'a> Window<'a> {
     }
 }
 
-#[derive(Default)]
 pub enum Layout {
     Intro,
-    None,
-    #[default]
     Main,
     Begin,
     Setup,
@@ -442,30 +445,264 @@ pub enum Layout {
 impl Layout {
     const INITIAL_POINT: Vector2 = Vector2::new(12.0, 84.0);
 
-    fn change_layout(state: &mut State, layout: Self) {
+    fn change_layout(state: &mut State, layout: Option<Self>) {
         state.layout = layout;
         state.window.widget.clear();
         state.window.mouse = Vector2::zero();
     }
 
-    pub fn draw(state: &mut State, draw: &mut RaylibDrawHandle) -> anyhow::Result<()> {
+    pub fn draw(
+        state: &mut State,
+        draw: &mut RaylibDrawHandle<'_>,
+        context: &mut Context,
+    ) -> anyhow::Result<()> {
+        // TO-DO disable this out of in-game.
         if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
-            if matches!(state.layout, Layout::None) {
-                Self::change_layout(state, Layout::Main);
+            if state.layout.is_none() {
+                Self::change_layout(state, Some(Layout::Main));
                 draw.enable_cursor();
             } else {
-                Self::change_layout(state, Layout::None);
+                Self::change_layout(state, None);
                 draw.disable_cursor();
             }
         }
 
-        match state.layout {
-            Layout::Main => Self::main(state, draw),
-            Layout::Begin => Self::begin(state, draw),
-            Layout::Setup => Self::setup(state, draw),
-            Layout::Close => Self::close(state, draw),
-            _ => Ok(()),
+        // right-click should return to the last menu.
+        // improve slider widget.
+        // add scroll widget?
+
+        if let Some(layout) = &state.layout {
+            match layout {
+                Layout::Main => Self::main(state, draw),
+                Layout::Begin => Self::begin(state, context, draw),
+                Layout::Setup => Self::setup(state, draw),
+                Layout::Close => Self::close(state, draw),
+                _ => Ok(()),
+            }?;
         }
+
+        Ok(())
+    }
+
+    fn main(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(draw, state.world.is_some());
+
+        let mut draw = draw.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
+            Self::draw_head_foot(window, draw, state.world.is_some(), "pwrmttl")?;
+
+            window.point = Self::INITIAL_POINT;
+
+            if window.button(draw, "begin")?.press {
+                layout = Some(Self::Begin);
+            };
+            if window.button(draw, "setup")?.press {
+                layout = Some(Self::Setup);
+            };
+            if window.button(draw, "close")?.press {
+                layout = Some(Self::Close);
+            };
+
+            Ok(())
+        })?;
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, Some(layout));
+        }
+
+        Ok(())
+    }
+
+    fn begin(
+        state: &mut State,
+        context: &mut Context,
+        draw: &mut RaylibDrawHandle<'_>,
+    ) -> anyhow::Result<()> {
+        Self::draw_back(draw, state.world.is_some());
+
+        if state.world.is_some() {
+            state.new_game(context)?;
+            return Ok(());
+        }
+
+        let mut layout = None;
+        let mut accept = false;
+
+        {
+            let mut draw = draw.begin_mode2D(Camera2D {
+                offset: Vector2::zero(),
+                target: Vector2::zero(),
+                rotation: 0.0,
+                zoom: 1.0,
+            });
+
+            state.window.draw(&mut draw, |window, draw| {
+                Self::draw_head_foot(window, draw, state.world.is_some(), "begin")?;
+
+                window.point = Self::INITIAL_POINT;
+
+                if window.button(draw, "accept")?.press {
+                    accept = true;
+                };
+                if window.button(draw, "return")?.press {
+                    layout = Some(Self::Main);
+                };
+
+                Ok(())
+            })?;
+        }
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, Some(layout));
+        }
+
+        if accept {
+            state.new_game(context)?;
+        }
+
+        Ok(())
+    }
+
+    fn setup(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(draw, state.world.is_some());
+
+        let mut draw = draw.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
+            Self::draw_head_foot(window, draw, state.world.is_some(), "setup")?;
+
+            window.point = Self::INITIAL_POINT;
+
+            window.toggle(draw, "play tutorial", &mut state.setting.tutorial)?;
+            if window
+                .toggle(draw, "screen full", &mut state.setting.screen_full)?
+                .press
+            {
+                if draw.is_window_fullscreen() {
+                    draw.set_window_size(1024, 768);
+                } else {
+                    draw.set_window_size(1920, 1080);
+                }
+
+                draw.toggle_fullscreen();
+            }
+            window.slider(
+                draw,
+                "screen field",
+                &mut state.setting.screen_field,
+                (60.0, 120.0, 1.0),
+            )?;
+            window.slider(
+                draw,
+                "screen shake",
+                &mut state.setting.screen_shake,
+                (0.0, 2.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "screen tilt",
+                &mut state.setting.screen_tilt,
+                (0.0, 2.0, 0.1),
+            )?;
+            if window
+                .slider(
+                    draw,
+                    "screen rate",
+                    &mut state.setting.screen_rate,
+                    (30.0, 300.0, 1.0),
+                )?
+                .release
+            {
+                draw.set_target_fps(state.setting.screen_rate as u32);
+            }
+            window.slider(
+                draw,
+                "mouse speed",
+                &mut state.setting.mouse_speed,
+                (0.0, 2.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "sound volume",
+                &mut state.setting.volume_sound,
+                (0.0, 1.0, 0.1),
+            )?;
+            window.slider(
+                draw,
+                "music volume",
+                &mut state.setting.volume_music,
+                (0.0, 1.0, 0.1),
+            )?;
+            window.action(draw, "move x+", &mut state.setting.move_x_a)?;
+            window.action(draw, "move x-", &mut state.setting.move_x_b)?;
+            window.action(draw, "move z+", &mut state.setting.move_z_a)?;
+            window.action(draw, "move z-", &mut state.setting.move_z_b)?;
+            window.action(draw, "jump", &mut state.setting.jump)?;
+            window.action(draw, "duck", &mut state.setting.duck)?;
+            window.action(draw, "fire a", &mut state.setting.fire_a)?;
+            window.action(draw, "fire b", &mut state.setting.fire_b)?;
+
+            if window.button(draw, "return")?.press {
+                layout = Some(Self::Main);
+            };
+
+            Ok(())
+        })?;
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, Some(layout));
+        }
+
+        Ok(())
+    }
+
+    fn close(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::draw_back(draw, state.world.is_some());
+
+        let mut draw = draw.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let mut layout = None;
+
+        state.window.draw(&mut draw, |window, draw| {
+            Self::draw_head_foot(window, draw, state.world.is_some(), "close")?;
+
+            window.point = Self::INITIAL_POINT;
+
+            if window.button(draw, "accept")?.press {
+                state.close = true;
+            };
+            if window.button(draw, "return")?.press {
+                layout = Some(Self::Main);
+            };
+
+            Ok(())
+        })?;
+
+        if let Some(layout) = layout {
+            Self::change_layout(state, Some(layout));
+        }
+
+        Ok(())
     }
 
     fn draw_back(handle: &mut RaylibDrawHandle, in_game: bool) {
@@ -487,13 +724,13 @@ impl Layout {
         draw.draw_cube(Vector3::zero(), 4.0, 4.0, 4.0, Color::BLACK);
 
         for r in 0..8 {
-            let p = (r as f32 / 8.0);
+            let p = r as f32 / 8.0;
 
             for i in 0..16 {
                 let t = time * (2.0 + 4.0 * p);
                 let j = (i as f32 / 8.0) * f32::consts::PI;
                 let x = j.sin() * (6.0 + 24.0 * p);
-                let y = t.sin() * (2.0 + 4.0 * p) - (8.0 * p);
+                let y = t.sin() * (2.0 + 4.00 * p) - (8.0 * p);
                 let z = j.cos() * (6.0 + 24.0 * p);
 
                 draw.draw_cube(
@@ -549,205 +786,6 @@ impl Layout {
             4.0,
             Color::WHITE,
         );
-
-        Ok(())
-    }
-
-    fn main(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle, state.in_game);
-
-        let mut draw = handle.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
-        let mut layout = None;
-
-        state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.in_game, "pwrmttl")?;
-
-            window.point = Self::INITIAL_POINT;
-
-            if window.button(draw, "begin")?.click {
-                layout = Some(Self::Begin);
-            };
-            if window.button(draw, "setup")?.click {
-                layout = Some(Self::Setup);
-            };
-            if window.button(draw, "close")?.click {
-                layout = Some(Self::Close);
-            };
-
-            Ok(())
-        })?;
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, layout);
-        }
-
-        Ok(())
-    }
-
-    fn begin(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle, state.in_game);
-
-        if !state.in_game {
-            state.new_game(handle)?;
-            return Ok(());
-        }
-
-        let mut layout = None;
-        let mut accept = false;
-
-        {
-            let mut draw = handle.begin_mode2D(Camera2D {
-                offset: Vector2::zero(),
-                target: Vector2::zero(),
-                rotation: 0.0,
-                zoom: 1.0,
-            });
-
-            state.window.draw(&mut draw, |window, draw| {
-                Self::draw_head_foot(window, draw, state.in_game, "begin")?;
-
-                window.point = Self::INITIAL_POINT;
-
-                if window.button(draw, "accept")?.click {
-                    accept = true;
-                };
-                if window.button(draw, "return")?.click {
-                    layout = Some(Self::Main);
-                };
-
-                Ok(())
-            })?;
-        }
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, layout);
-        }
-
-        if accept {
-            state.new_game(handle)?;
-        }
-
-        Ok(())
-    }
-
-    fn setup(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle, state.in_game);
-
-        let mut draw = handle.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
-        let mut layout = None;
-
-        state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.in_game, "setup")?;
-
-            window.point = Self::INITIAL_POINT;
-
-            if window
-                .toggle(draw, "screen full", &mut state.setting.screen_full)?
-                .click
-            {
-                if draw.is_window_fullscreen() {
-                    draw.set_window_size(1024, 768);
-                } else {
-                    draw.set_window_size(1920, 1080);
-                }
-
-                draw.toggle_fullscreen();
-            }
-            window.slider(
-                draw,
-                "screen field",
-                &mut state.setting.screen_field,
-                (60.0, 120.0, 1.0),
-            )?;
-            window.slider(
-                draw,
-                "screen shake",
-                &mut state.setting.screen_shake,
-                (0.0, 2.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "mouse speed",
-                &mut state.setting.mouse_speed,
-                (0.0, 2.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "sound volume",
-                &mut state.setting.volume_sound,
-                (0.0, 1.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "music volume",
-                &mut state.setting.volume_music,
-                (0.0, 1.0, 0.1),
-            )?;
-            window.action(draw, "move x+", &mut state.setting.move_x_a)?;
-            window.action(draw, "move x-", &mut state.setting.move_x_b)?;
-            window.action(draw, "move z+", &mut state.setting.move_z_a)?;
-            window.action(draw, "move z-", &mut state.setting.move_z_b)?;
-            window.action(draw, "jump", &mut state.setting.jump)?;
-            window.action(draw, "duck", &mut state.setting.duck)?;
-            window.action(draw, "fire a", &mut state.setting.fire_a)?;
-            window.action(draw, "fire b", &mut state.setting.fire_b)?;
-
-            if window.button(draw, "return")?.click {
-                layout = Some(Self::Main);
-            };
-
-            Ok(())
-        })?;
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, layout);
-        }
-
-        Ok(())
-    }
-
-    fn close(state: &mut State, handle: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(handle, state.in_game);
-
-        let mut draw = handle.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
-        let mut layout = None;
-
-        state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.in_game, "close")?;
-
-            window.point = Self::INITIAL_POINT;
-
-            if window.button(draw, "accept")?.click {
-                state.close = true;
-            };
-            if window.button(draw, "return")?.click {
-                layout = Some(Self::Main);
-            };
-
-            Ok(())
-        })?;
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, layout);
-        }
 
         Ok(())
     }

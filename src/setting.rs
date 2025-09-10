@@ -48,12 +48,19 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::state::*;
+
+//================================================================
+
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
+//================================================================
+
 #[derive(Serialize, Deserialize)]
 pub struct Setting {
+    pub tutorial: bool,
     pub screen_full: bool,
     pub screen_field: f32,
     pub screen_shake: f32,
@@ -84,6 +91,7 @@ impl Default for Setting {
             data
         } else {
             Self {
+                tutorial: true,
                 screen_full: false,
                 screen_field: 90.0,
                 screen_shake: 1.0,
@@ -107,15 +115,14 @@ impl Default for Setting {
 
 impl Drop for Setting {
     fn drop(&mut self) {
-        if let Ok(data) = serde_json::to_string_pretty(self) {
-            std::fs::write(Self::PATH_FILE, data);
+        if let Ok(data) = serde_json::to_string_pretty(self)
+            && let Err(error) = std::fs::write(Self::PATH_FILE, data)
+        {
+            State::error_string(&error.to_string());
         }
     }
 }
 
-// there is a build failure on raylib-rs 5.5.1 when using the "serde" feature
-// that supposedly does implement Serialize for KeyboardKey/etc; but it does not
-// compile successfully as of 5/9/2025.
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
 pub enum Input {
     Board {

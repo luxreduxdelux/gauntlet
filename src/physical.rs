@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::state::*;
+use crate::world::*;
 
 //================================================================
 
@@ -136,11 +136,11 @@ impl Physical {
         character: KinematicCharacterController,
         speed: Vector3,
     ) -> anyhow::Result<EffectiveCharacterMovement> {
-        let wish_speed = vector![speed.x, speed.y, speed.z] * State::TIME_STEP;
+        let wish_speed = vector![speed.x, speed.y, speed.z] * World::TIME_STEP;
         let collider = self.get_collider(collider_handle)?;
 
         let movement = character.move_shape(
-            State::TIME_STEP,
+            World::TIME_STEP,
             &self.rigid_body_set,
             &self.collider_set,
             &self.query_pipeline,

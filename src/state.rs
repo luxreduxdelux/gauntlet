@@ -49,36 +49,62 @@
 */
 
 use crate::asset::*;
-use crate::entity::*;
-use crate::physical::*;
-use crate::player::*;
 use crate::setting::*;
 use crate::window::*;
+use crate::world::*;
 
 //================================================================
 
 use raylib::prelude::*;
 
+pub struct Context {
+    pub handle: RaylibHandle,
+    pub thread: RaylibThread,
+    pub audio: RaylibAudio,
+}
+
+impl Context {
+    pub fn new() -> anyhow::Result<Self> {
+        let (mut handle, thread) = raylib::init()
+            .size(1024, 768)
+            .resizable()
+            .title("pwrmttl")
+            .build();
+
+        handle.set_exit_key(None);
+
+        let audio = RaylibAudio::init_audio_device()?;
+
+        Ok(Self {
+            handle,
+            thread,
+            audio,
+        })
+    }
+
+    pub fn apply_setting(&mut self, setting: &Setting) {
+        if setting.screen_full {
+            self.handle.set_window_size(1920, 1080);
+            self.handle.toggle_fullscreen();
+        }
+
+        self.handle.set_target_fps(setting.screen_rate as u32);
+    }
+}
+
 //================================================================
 
+#[derive(Default)]
 pub struct State<'a> {
     pub close: bool,
+    pub world: Option<World>,
     pub asset: Asset<'a>,
     pub window: Window<'a>,
-    pub layout: Layout,
+    pub layout: Option<Layout>,
     pub setting: Setting,
-    pub in_game: bool,
-    pub entity_list: Vec<Box<dyn Entity>>,
-    pub camera_3d: Camera3D,
-    pub camera_2d: Camera2D,
-    pub physical: Physical,
-    pub time: f32,
-    step: f32,
 }
 
 impl<'a> State<'a> {
-    pub const TIME_STEP: f32 = 1.0 / 60.0;
-
     pub fn error(result: anyhow::Result<()>) {
         if let Err(error) = result {
             let e = error.to_string();
@@ -95,121 +121,59 @@ impl<'a> State<'a> {
         }
     }
 
-    pub fn new() -> Self {
-        Self {
-            close: bool::default(),
-            asset: Asset::default(),
-            window: Window::default(),
-            layout: Layout::default(),
-            setting: Setting::default(),
-            in_game: false,
-            entity_list: Default::default(),
-            camera_3d: Camera3D::perspective(
-                Vector3::default(),
-                Vector3::default(),
-                Vector3::default(),
-                90.0,
-            ),
-            camera_2d: Default::default(),
-            physical: Physical::default(),
-            time: f32::default(),
-            step: f32::default(),
-        }
+    pub fn error_string(text: &str) {
+        let e = text.to_string();
+
+        std::thread::spawn(move || {
+            rfd::MessageDialog::new()
+                .set_level(rfd::MessageLevel::Error)
+                .set_title("Fatal Error")
+                .set_description(e)
+                .show();
+        });
+
+        panic!("{text}");
     }
 
-    pub fn initialize(
-        &mut self,
-        handle: &mut RaylibHandle,
-        thread: &RaylibThread,
-        audio: &'a RaylibAudio,
-    ) -> anyhow::Result<()> {
-        self.asset
-            .set_model(handle, thread, "data/level/level.glb")?;
-        self.window.initialize(handle, thread, audio)?;
+    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
+        self.layout = Some(Layout::Main);
+        self.asset.set_model(context, "data/level/level.glb")?;
+        self.window.initialize(context)?;
 
         Ok(())
     }
 
-    pub fn new_game(&mut self, handle: &mut RaylibHandle) -> anyhow::Result<()> {
-        handle.disable_cursor();
+    pub fn new_game(&mut self, context: &mut Context) -> anyhow::Result<()> {
+        context.handle.disable_cursor();
 
-        self.in_game = true;
-        self.entity_list.clear();
-        self.physical = Physical::default();
-        self.layout = Layout::None;
-
-        let player = Box::new(Player::new(self)?);
-        self.entity_list.push(player);
+        self.layout = None;
+        self.world = Some(World::new(self, context)?);
 
         Ok(())
     }
 
-    pub fn main(
-        &mut self,
-        handle: &mut RaylibHandle,
-        thread: &RaylibThread,
-        audio: &'a RaylibAudio,
-    ) -> anyhow::Result<()> {
-        while !handle.window_should_close() && !self.close {
-            if handle.is_key_pressed(KeyboardKey::KEY_F1) {
-                *self = State::new();
-                self.initialize(handle, thread, audio)?;
-            }
+    pub fn main(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
+        while !context.handle.window_should_close() && !self.close {
+            let ctx = { context as *mut Context };
 
-            if matches!(self.layout, Layout::None) {
-                let frame_time = handle.get_frame_time().min(0.25);
-
-                self.step += frame_time;
-
-                while self.step >= Self::TIME_STEP {
-                    self.physical.tick();
-
-                    unsafe {
-                        let state = self as *mut Self;
-
-                        for entity in &mut self.entity_list {
-                            entity.tick(&mut *state, handle)?;
-                        }
-                    }
-
-                    self.time += Self::TIME_STEP;
-                    self.step -= Self::TIME_STEP;
+            unsafe {
+                if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F1) {
+                    *self = State::default();
+                    self.initialize(&mut *ctx)?;
                 }
-            }
 
-            let mut draw = handle.begin_drawing(thread);
+                let mut draw = context.handle.begin_drawing(&context.thread);
 
-            draw.clear_background(Color::WHITE);
+                draw.clear_background(Color::WHITE);
 
-            {
-                let mut draw_3d = draw.begin_mode3D(self.camera_3d);
+                let state = self as *mut Self;
 
-                unsafe {
-                    let state = self as *mut Self;
-
-                    for entity in &mut self.entity_list {
-                        entity.draw_3d(&mut *state, &mut draw_3d)?;
-                    }
+                if let Some(world) = &mut self.world {
+                    world.main(&mut *state, &mut draw, &mut *ctx)?;
                 }
+
+                Layout::draw(self, &mut draw, &mut *ctx)?;
             }
-            {
-                let mut draw_2d = draw.begin_mode2D(Camera2D {
-                    offset: Vector2::zero(),
-                    target: Vector2::zero(),
-                    rotation: 0.0,
-                    zoom: 1.0,
-                });
-
-                unsafe {
-                    let state = self as *mut Self;
-
-                    for entity in &mut self.entity_list {
-                        entity.draw_2d(&mut *state, &mut draw_2d)?;
-                    }
-                }
-            }
-
-            Layout::draw(self, &mut draw)?;
         }
 
         Ok(())

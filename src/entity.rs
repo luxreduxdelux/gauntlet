@@ -49,6 +49,7 @@
 */
 
 use crate::state::*;
+use crate::world::*;
 
 //================================================================
 
@@ -56,6 +57,7 @@ use raylib::prelude::*;
 
 //================================================================
 
+#[typetag::serde(tag = "type")]
 pub trait Entity {
     fn get_point(&mut self) -> &mut Vector3;
     fn get_angle(&mut self) -> &mut Vector3;
@@ -79,6 +81,7 @@ pub trait Entity {
         &mut self,
         _state: &mut State,
         _draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
@@ -86,10 +89,24 @@ pub trait Entity {
         &mut self,
         _state: &mut State,
         _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
-    fn tick(&mut self, _state: &mut State, _handle: &mut RaylibHandle) -> anyhow::Result<()> {
+    fn main(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn tick(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

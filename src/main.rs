@@ -54,44 +54,31 @@ mod physical;
 mod player;
 mod setting;
 mod state;
+mod tina;
 mod utility;
 mod window;
-//mod world;
+mod world;
 
 //================================================================
-
-use raylib::audio::RaylibAudio;
 
 use crate::state::*;
 
 //================================================================
 
 fn main() -> anyhow::Result<()> {
-    let audio = RaylibAudio::init_audio_device()?;
+    let mut context = Context::new()?;
+    let mut state = State::default();
 
-    let mut state = State::new();
-
-    //================================================================
-
-    //let (mut handle, thread) = raylib::init().size(1024, 768).title("Mettle").build();
-    let (mut handle, thread) = raylib::init()
-        .size(1024, 768)
-        .resizable()
-        .title("pwrmttl")
-        .build();
-
-    if state.setting.screen_full {
-        handle.set_window_size(1920, 1080);
-        handle.toggle_fullscreen();
-    }
-
-    handle.set_exit_key(None);
-    handle.set_target_fps(state.setting.screen_rate as u32);
+    context.apply_setting(&state.setting);
 
     //================================================================
 
-    State::error(state.initialize(&mut handle, &thread, &audio));
-    State::error(state.main(&mut handle, &thread, &audio));
+    unsafe {
+        let context = &mut context as *mut Context;
+        State::error(state.initialize(&mut *context));
+    };
+
+    State::error(state.main(&mut context));
 
     // weird drop bug in raylib-rs will cause state to drop incorrectly.
     drop(state);

@@ -50,33 +50,46 @@
 
 // interpolate entity point/angle from previous frame to current to smooth out 60tick update rate
 // bunny hop player movement state: if you slide, jump, then hit the next jump immediately after falling, every subsequent jump will have increased forward velocity with the limitation of less strafe movement
+// fix attaching to wall after jump off wall run
 
 use crate::entity::*;
 use crate::setting::*;
 use crate::state::*;
 use crate::utility::*;
-use crate::window::*;
+use crate::world::*;
 
 //================================================================
 
 use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Player {
     point: Vector3,
     angle: Vector3,
     speed: Vector3,
+    #[serde(skip)]
     collider: ColliderHandle,
+    #[serde(skip)]
     character: KinematicCharacterController,
+    #[serde(skip)]
     state: PlayerState,
+    #[serde(skip)]
     view: View,
+    #[serde(skip)]
     floor: bool,
+    #[serde(skip)]
     slide: bool,
+    #[serde(skip)]
     clash: bool,
+    #[serde(skip)]
+    focus: bool,
+    #[serde(skip)]
+    shake: f32,
 }
 
 impl Player {
@@ -84,13 +97,17 @@ impl Player {
     const ANGLE_MAX: f32 = 90.0;
     const CUBE_SHAPE: Vector3 = Vector3::new(0.25, 0.5, 0.25);
 
-    pub fn new(state: &mut State) -> anyhow::Result<Self> {
-        state
+    pub fn new(
+        state: &mut State,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<Self> {
+        world
             .physical
             .new_model(state.asset.get_model("data/level/level.glb")?)?;
 
-        let collider = state.physical.new_cuboid(Self::CUBE_SHAPE);
-        let mollider = state.physical.get_collider_mut(collider).unwrap();
+        let collider = world.physical.new_cuboid(Self::CUBE_SHAPE);
+        let mollider = world.physical.get_collider_mut(collider).unwrap();
         mollider.set_translation(vector![0.0, 2.0, 0.0]);
 
         // this has something to do with being stuck on the ground after a dash jump.
@@ -108,15 +125,24 @@ impl Player {
             floor: bool::default(),
             slide: bool::default(),
             clash: bool::default(),
+            focus: true,
+            shake: f32::default(),
         })
     }
 
-    fn movement(&mut self, state: &mut State, handle: &mut RaylibHandle) -> anyhow::Result<()> {
-        PlayerState::tick(self, state, handle);
+    fn movement(
+        &mut self,
+        state: &mut State,
+        handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        self.shake = (self.shake - World::TIME_STEP * self.shake * 4.0).max(0.0);
+
+        PlayerState::tick(self, state, handle, world);
 
         //================================================================
 
-        let movement = state
+        let movement = world
             .physical
             .move_controller(self.collider, self.character, self.speed)?;
         let position = Vector3::new(
@@ -128,7 +154,7 @@ impl Player {
         self.clash = false;
         self.slide = movement.is_sliding_down_slope;
 
-        if self.speed * State::TIME_STEP != position {
+        if self.speed * World::TIME_STEP != position {
             self.clash = true;
         }
 
@@ -139,6 +165,7 @@ impl Player {
     }
 }
 
+#[typetag::serde]
 impl Entity for Player {
     fn get_point(&mut self) -> &mut Vector3 {
         &mut self.point
@@ -156,14 +183,13 @@ impl Entity for Player {
         &mut self,
         state: &mut State,
         draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        world: &mut World,
     ) -> anyhow::Result<()> {
         let model = state.asset.get_model("data/level/level.glb")?;
 
         draw.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
 
-        if draw.is_key_down(KeyboardKey::KEY_TAB) {
-            state.physical.draw();
-        }
+        //world.physical.draw();
 
         //================================================================
 
@@ -181,35 +207,50 @@ impl Entity for Player {
         let mouse = draw.get_mouse_delta();
 
         // remove when using render-target.
-        if matches!(state.layout, Layout::None) {
-            self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
-            self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
-        }
+        self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
+        self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
         self.angle.x %= 359.0;
         self.angle.y = self.angle.y.clamp(Self::ANGLE_MIN, Self::ANGLE_MAX);
 
         //================================================================
 
+        use rand::Rng;
+
+        let shake = {
+            if self.shake > 0.0 {
+                let mut random = rand::rng();
+                Vector3::new(
+                    random.random_range(-self.shake..self.shake),
+                    random.random_range(-self.shake..self.shake),
+                    random.random_range(-self.shake..self.shake),
+                )
+            } else {
+                Vector3::zero()
+            }
+        };
+
         self.view.blend(draw, &PlayerState::view(self, state, draw));
 
         let direction = Direction::new_from_angle(&self.angle);
 
-        state.camera_3d.position = self.point + self.view.point;
-        state.camera_3d.target = self.point
+        world.camera_3d.position = self.point + shake + self.view.point;
+        world.camera_3d.target = self.point
+            + shake
             + self.view.point
             + Vector3::new(self.view.angle.x, self.view.angle.y, 0.0)
             + direction.x;
-        state.camera_3d.up =
+        world.camera_3d.up =
             vector_3_rotate_by_axis_angle(direction.y, direction.x, self.view.angle.z.to_radians());
-        state.camera_3d.fovy = self.view.scale;
+        world.camera_3d.fovy = self.view.scale;
 
         Ok(())
     }
 
     fn draw_2d(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
         let half = Vector2::new(
             draw.get_render_width() as f32 * 0.5,
@@ -222,8 +263,25 @@ impl Entity for Player {
         Ok(())
     }
 
-    fn tick(&mut self, state: &mut State, handle: &mut RaylibHandle) -> anyhow::Result<()> {
-        self.movement(state, handle)?;
+    fn tick(
+        &mut self,
+        state: &mut State,
+        handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        let focus = handle.is_window_focused();
+
+        // fix for annoying bug on ALT+TAB where mouse goes out of window for some reason
+        if self.focus != focus {
+            if focus {
+                handle.enable_cursor();
+                handle.disable_cursor();
+            }
+
+            self.focus = focus;
+        }
+
+        self.movement(state, handle, world)?;
 
         state.setting.move_x_a.wipe();
         state.setting.move_x_b.wipe();
@@ -302,19 +360,19 @@ impl PlayerState {
         0.0
     }
 
-    fn tick(player: &mut Player, state: &State, handle: &RaylibHandle) {
+    fn tick(player: &mut Player, state: &State, handle: &RaylibHandle, world: &World) {
         match player.state {
             Self::Walk {
                 ref mut time,
                 ref mut jump,
                 ref mut null,
             } => {
-                *time -= State::TIME_STEP;
+                *time -= World::TIME_STEP;
                 *time = time.max(0.0);
 
-                *jump -= *jump * State::TIME_STEP * 4.0;
+                *jump -= *jump * World::TIME_STEP * 4.0;
 
-                *null -= State::TIME_STEP;
+                *null -= World::TIME_STEP;
                 *null = null.max(0.0);
 
                 let move_angle = Direction::new_from_angle(&Vector3::new(player.angle.x, 0.0, 0.0));
@@ -372,11 +430,11 @@ impl PlayerState {
 
                         if self_length < Self::SPEED_MIN {
                             self_length = 1.0
-                                - State::TIME_STEP
+                                - World::TIME_STEP
                                     * (Self::SPEED_MIN / self_length)
                                     * Self::SPEED_FALL;
                         } else {
-                            self_length = 1.0 - State::TIME_STEP * Self::SPEED_FALL;
+                            self_length = 1.0 - World::TIME_STEP * Self::SPEED_FALL;
                         }
 
                         if self_length < 0.0 {
@@ -392,11 +450,11 @@ impl PlayerState {
 
                     if self_length > 0.0 {
                         player.speed += move_where
-                            * self_length.min(Self::SPEED_RISE * move_speed * State::TIME_STEP);
+                            * self_length.min(Self::SPEED_RISE * move_speed * World::TIME_STEP);
                     }
                 } else {
                     // in-air movement.
-                    player.speed.y -= Self::SPEED_AIR_FALL * State::TIME_STEP;
+                    player.speed.y -= Self::SPEED_AIR_FALL * World::TIME_STEP;
 
                     if *null <= 0.0 {
                         let speed_length = if move_speed < Self::SPEED_AIR_MIN {
@@ -408,7 +466,7 @@ impl PlayerState {
                         if speed_length > 0.0 {
                             player.speed += move_where
                                 * speed_length
-                                    .min(Self::SPEED_AIR_RISE * move_speed * State::TIME_STEP);
+                                    .min(Self::SPEED_AIR_RISE * move_speed * World::TIME_STEP);
                         }
                     }
 
@@ -440,7 +498,7 @@ impl PlayerState {
                             let ray = raylib::math::Ray::new(player.point + ray_list[x], move_z);
 
                             // wall-run.
-                            if let Some((_, info)) = state.physical.cast_ray(
+                            if let Some((_, info)) = world.physical.cast_ray(
                                 ray,
                                 0.05,
                                 true,
@@ -475,9 +533,9 @@ impl PlayerState {
                 }
             }
             Self::Dash { ref mut time } => {
-                *time -= State::TIME_STEP;
+                *time -= World::TIME_STEP;
 
-                player.speed.y -= Self::SPEED_AIR_FALL * State::TIME_STEP;
+                player.speed.y -= Self::SPEED_AIR_FALL * World::TIME_STEP;
 
                 if *time <= 0.0 || (player.clash && !player.slide) {
                     player.state = Self::Walk {
@@ -488,7 +546,7 @@ impl PlayerState {
                 }
             }
             Self::Duck { ref mut time } => {
-                *time -= State::TIME_STEP;
+                *time -= World::TIME_STEP;
 
                 if *time <= 0.0 || (player.clash && !player.slide) {
                     player.state = Self::Walk {
@@ -498,7 +556,8 @@ impl PlayerState {
                     }
                 }
 
-                // player may sometimes perform a dash jump only to stay on the ground?
+                //
+
                 if state.setting.jump.press() {
                     player.speed.y = Self::SPEED_JUMP;
                     player.state = Self::Walk {
@@ -509,11 +568,14 @@ impl PlayerState {
                 }
             }
             Self::Slam { ref mut time } => {
-                *time += State::TIME_STEP * 4.0;
+                *time += World::TIME_STEP * 4.0;
 
-                player.speed.y -= 8.0_f32.powf(*time + 1.0) * State::TIME_STEP;
+                player.speed.y -= 8.0_f32.powf(*time + 1.0) * World::TIME_STEP;
 
                 if player.floor {
+                    let shake = (player.speed.y.abs() / 64.0).min(1.0) * 0.5;
+
+                    player.shake = shake;
                     player.state = Self::Walk {
                         time: 0.0,
                         jump: 0.0,
@@ -540,7 +602,7 @@ impl PlayerState {
                     let ray = raylib::math::Ray::new(player.point + ray_list[x], ray);
 
                     // wall-run.
-                    if let Some(_) = state.physical.cast_ray(
+                    if let Some(_) = world.physical.cast_ray(
                         ray,
                         0.05,
                         true,
@@ -553,6 +615,7 @@ impl PlayerState {
 
                 // wall with an angle is acting kind of weird
                 // if player should fall/clash against a wall, make player unable to wall run until they touch the ground again.
+                // lock horizontal/vertical angle to limited range.
 
                 if wall_direction != direction || player.clash || wall_none {
                     player.speed += plane * Self::WALL_PLANE_FALL_FORCE;
