@@ -65,7 +65,7 @@ pub struct Asset<'a> {
 }
 
 impl<'a> Asset<'a> {
-    pub fn set_model(&mut self, context: &mut Context, name: &str) -> anyhow::Result<&Model> {
+    pub fn set_model(&mut self, context: &mut Context, name: &str) -> anyhow::Result<&mut Model> {
         let mut model = context.handle.load_model(&context.thread, name)?;
 
         // create mip-map.
@@ -86,8 +86,8 @@ impl<'a> Asset<'a> {
         self.get_model(name)
     }
 
-    pub fn get_model(&self, name: &str) -> anyhow::Result<&Model> {
-        self.model.get(name).ok_or(anyhow::Error::msg(format!(
+    pub fn get_model(&mut self, name: &str) -> anyhow::Result<&mut Model> {
+        self.model.get_mut(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_model(): Could not find asset \"{name}\"."
         )))
     }
@@ -125,5 +125,11 @@ impl<'a> Asset<'a> {
         self.font.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_font(): Could not find asset \"{name}\"."
         )))
+    }
+}
+
+impl Drop for Asset<'_> {
+    fn drop(&mut self) {
+        // TO-DO manually un-load each texture for each model, as raylib does not normally do that.
     }
 }

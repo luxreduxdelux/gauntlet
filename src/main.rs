@@ -55,6 +55,7 @@ mod player;
 mod setting;
 mod state;
 mod tina;
+mod tutorial;
 mod utility;
 mod window;
 mod world;

@@ -105,6 +105,8 @@ pub struct State<'a> {
 }
 
 impl<'a> State<'a> {
+    pub const VERSION: &'a str = env!("CARGO_PKG_VERSION");
+
     pub fn error(result: anyhow::Result<()>) {
         if let Err(error) = result {
             let e = error.to_string();
@@ -137,7 +139,6 @@ impl<'a> State<'a> {
 
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
         self.layout = Some(Layout::Main);
-        self.asset.set_model(context, "data/level/level.glb")?;
         self.window.initialize(context)?;
 
         Ok(())
@@ -147,7 +148,7 @@ impl<'a> State<'a> {
         context.handle.disable_cursor();
 
         self.layout = None;
-        self.world = Some(World::new(self, context)?);
+        self.world = Some(World::new(self, context, "data/level/level.json")?);
 
         Ok(())
     }
@@ -160,6 +161,10 @@ impl<'a> State<'a> {
                 if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F1) {
                     *self = State::default();
                     self.initialize(&mut *ctx)?;
+                }
+
+                if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F2) {
+                    self.new_game(context)?;
                 }
 
                 let mut draw = context.handle.begin_drawing(&context.thread);

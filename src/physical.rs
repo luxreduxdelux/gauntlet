@@ -57,23 +57,26 @@ use rapier3d::{
     prelude::*,
 };
 use raylib::prelude::*;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 //================================================================
 
 #[derive(Default)]
 pub struct Physical {
-    pub rigid_body_set: RigidBodySet,
-    pub collider_set: ColliderSet,
-    pub integration_parameters: IntegrationParameters,
-    pub physics_pipeline: PhysicsPipeline,
-    pub island_manager: IslandManager,
-    pub broad_phase: DefaultBroadPhase,
-    pub narrow_phase: NarrowPhase,
-    pub impulse_joint_set: ImpulseJointSet,
-    pub multibody_joint_set: MultibodyJointSet,
-    pub ccd_solver: CCDSolver,
-    pub query_pipeline: QueryPipeline,
-    pub debug_render_pipeline: DebugRenderPipeline,
+    rigid_body_set: RigidBodySet,
+    collider_set: ColliderSet,
+    integration_parameters: IntegrationParameters,
+    physics_pipeline: PhysicsPipeline,
+    island_manager: IslandManager,
+    broad_phase: DefaultBroadPhase,
+    narrow_phase: NarrowPhase,
+    impulse_joint_set: ImpulseJointSet,
+    multibody_joint_set: MultibodyJointSet,
+    ccd_solver: CCDSolver,
+    query_pipeline: QueryPipeline,
+    debug_render_pipeline: DebugRenderPipeline,
+    pub collision_handler: CollisionHandler,
 }
 
 impl Physical {
@@ -94,7 +97,7 @@ impl Physical {
 
             for x in 0..index.len() / 3 {
                 list_index.push([
-                    index[x * 3 + 0] as u32,
+                    index[x * 3] as u32,
                     index[x * 3 + 1] as u32,
                     index[x * 3 + 2] as u32,
                 ]);
@@ -147,7 +150,9 @@ impl Physical {
             collider.shape(),
             collider.position(),
             wish_speed,
-            QueryFilter::default().exclude_collider(collider_handle),
+            QueryFilter::default()
+                .exclude_collider(collider_handle)
+                .exclude_sensors(),
             |_| {},
         );
 
@@ -160,7 +165,7 @@ impl Physical {
     }
 
     pub fn new_cuboid(&mut self, shape: Vector3) -> ColliderHandle {
-        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z).build();
+        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z).active_events(ActiveEvents::COLLISION_EVENTS).active_collision_types(ActiveCollisionTypes::all()).build();
 
         self.collider_set.insert(collider)
     }
@@ -181,6 +186,28 @@ impl Physical {
             )))
     }
 
+    pub fn set_collider_point(
+        &mut self,
+        handle: ColliderHandle,
+        point: Vector3,
+    ) -> anyhow::Result<()> {
+        let handle = self.get_collider_mut(handle)?;
+        handle.set_translation(vector![point.x, point.y, point.z]);
+
+        Ok(())
+    }
+
+    pub fn set_collider_sensor(
+        &mut self,
+        handle: ColliderHandle,
+        sensor: bool,
+    ) -> anyhow::Result<()> {
+        let handle = self.get_collider_mut(handle)?;
+        handle.set_sensor(sensor);
+
+        Ok(())
+    }
+
     pub fn draw(&mut self) {
         self.debug_render_pipeline.render(
             &mut DebugRender {},
@@ -193,6 +220,10 @@ impl Physical {
     }
 
     pub fn tick(&mut self) {
+        if let Ok(lock) = &mut self.collision_handler.collision_list.lock() {
+            lock.clear();
+        }
+
         self.physics_pipeline.step(
             &vector![0.0, -9.81, 0.0],
             &self.integration_parameters,
@@ -206,8 +237,60 @@ impl Physical {
             &mut self.ccd_solver,
             Some(&mut self.query_pipeline),
             &(),
-            &(),
+            &self.collision_handler,
         );
+    }
+}
+
+#[derive(Default, Debug)]
+pub struct HitEvent {
+    pub collider_a: ColliderHandle,
+    pub collider_b: ColliderHandle,
+}
+
+#[derive(Default)]
+pub struct CollisionHandler {
+    pub collision_list: Arc<Mutex<Vec<HitEvent>>>,
+}
+
+impl EventHandler for CollisionHandler {
+    fn handle_collision_event(
+        &self,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        event: CollisionEvent,
+        _contact_pair: Option<&ContactPair>,
+    ) {
+        if let Ok(mut lock) = self.collision_list.lock() {
+            match event {
+                CollisionEvent::Started(
+                    collider_handle,
+                    collider_handle1,
+                    collision_event_flags,
+                ) => lock.push(HitEvent {
+                    collider_a: collider_handle,
+                    collider_b: collider_handle1,
+                }),
+                CollisionEvent::Stopped(
+                    collider_handle,
+                    collider_handle1,
+                    collision_event_flags,
+                ) => lock.push(HitEvent {
+                    collider_a: collider_handle,
+                    collider_b: collider_handle1,
+                }),
+            }
+        }
+    }
+
+    fn handle_contact_force_event(
+        &self,
+        _dt: f32,
+        _bodies: &RigidBodySet,
+        _colliders: &ColliderSet,
+        _contact_pair: &ContactPair,
+        _total_force_magnitude: f32,
+    ) {
     }
 }
 

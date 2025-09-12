@@ -81,6 +81,9 @@ impl Direction {
             angle.y.sin() * angle.x.cos(),
         );
 
+        // there's probably a better way to do this.
+        let y = vector_3_rotate_by_axis_angle(y, x, angle.z);
+
         // right.
         let z = Vector3::new(angle.x.cos(), 0.0, angle.x.sin() * -1.0);
 
@@ -123,6 +126,26 @@ pub fn ease_in_out_cubic(x: f32) -> f32 {
     } else {
         1.0 - (-2.0 * x + 2.0).powf(3.0) / 2.0
     }
+}
+
+pub fn draw_model_transform(
+    draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+    model: &mut Model,
+    point: Vector3,
+    angle: Vector3,
+    scale: f32,
+) {
+    model.transform = Matrix::rotate_xyz(Vector3::new(
+        (-angle.y) * DEG2RAD as f32,
+        (-angle.x - 180.0) * DEG2RAD as f32,
+        // TO-DO fix roll
+        (angle.z) * DEG2RAD as f32,
+    ))
+    .into();
+
+    draw.draw_model(&mut *model, point, scale, Color::WHITE);
+
+    model.transform = Matrix::identity().into();
 }
 
 pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {

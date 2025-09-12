@@ -50,6 +50,7 @@
 
 use crate::entity::*;
 use crate::state::*;
+use crate::utility::*;
 use crate::world::*;
 
 use raylib::prelude::*;
@@ -59,27 +60,25 @@ use serde::{Deserialize, Serialize};
 pub struct Tina {
     point: Vector3,
     angle: Vector3,
+    #[serde(skip)]
     speed: Vector3,
 }
 
-impl Tina {
-    pub fn new(
-        state: &mut State,
-        context: &mut Context,
-        world: &mut World,
-    ) -> anyhow::Result<Self> {
-        state.asset.set_model(context, "data/video/tina.glb")?;
-
-        Ok(Self {
-            point: Vector3::up() * 2.0,
-            angle: Vector3::default(),
-            speed: Vector3::default(),
-        })
-    }
-}
+impl Tina {}
 
 #[typetag::serde]
 impl Entity for Tina {
+    fn initialize(
+        &mut self,
+        state: &mut State,
+        context: &mut Context,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        state.asset.set_model(context, "data/video/tina.glb")?;
+
+        Ok(())
+    }
+
     fn get_point(&mut self) -> &mut Vector3 {
         &mut self.point
     }
@@ -100,7 +99,13 @@ impl Entity for Tina {
     ) -> anyhow::Result<()> {
         let model = state.asset.get_model("data/video/tina.glb")?;
 
-        draw.draw_model(model, self.point, 0.5, Color::WHITE);
+        let direction = Direction::new_from_angle(&self.angle);
+
+        draw.draw_ray(Ray::new(self.point, direction.x), Color::RED);
+        draw.draw_ray(Ray::new(self.point, direction.y), Color::GREEN);
+        draw.draw_ray(Ray::new(self.point, direction.z), Color::BLUE);
+
+        draw_model_transform(draw, model, self.point, self.angle, 0.5);
 
         Ok(())
     }

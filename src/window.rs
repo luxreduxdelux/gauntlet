@@ -96,6 +96,7 @@ pub struct Window<'a> {
     point: Vector2,
     mouse: Vector2,
     focus: Option<String>,
+    time: f32,
 }
 
 impl<'a> Window<'a> {
@@ -109,6 +110,7 @@ impl<'a> Window<'a> {
             .set_font(context, "data/video/font_title.ttf", 56)?;
         self.asset.set_sound(context, "data/audio/hover.ogg")?;
         self.asset.set_sound(context, "data/audio/click.ogg")?;
+        self.asset.set_sound(context, "data/audio/back.ogg")?;
 
         Ok(())
     }
@@ -183,7 +185,7 @@ impl<'a> Window<'a> {
         ))
     }
 
-    pub fn draw<
+    fn draw<
         T: FnMut(&mut Self, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
     >(
         &mut self,
@@ -251,7 +253,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    pub fn button(
+    fn button(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
@@ -271,7 +273,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    pub fn toggle(
+    fn toggle(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
@@ -310,7 +312,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    pub fn slider(
+    fn slider(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
@@ -375,7 +377,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    pub fn action(
+    fn action(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
@@ -437,6 +439,7 @@ impl<'a> Window<'a> {
 pub enum Layout {
     Intro,
     Main,
+    Zoom,
     Begin,
     Setup,
     Close,
@@ -447,6 +450,7 @@ impl Layout {
 
     fn change_layout(state: &mut State, layout: Option<Self>) {
         state.layout = layout;
+        state.window.time = 0.0;
         state.window.widget.clear();
         state.window.mouse = Vector2::zero();
     }
@@ -456,36 +460,41 @@ impl Layout {
         draw: &mut RaylibDrawHandle<'_>,
         context: &mut Context,
     ) -> anyhow::Result<()> {
-        // TO-DO disable this out of in-game.
-        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
-            if state.layout.is_none() {
-                Self::change_layout(state, Some(Layout::Main));
-                draw.enable_cursor();
-            } else {
-                Self::change_layout(state, None);
-                draw.disable_cursor();
-            }
-        }
+        state.window.time += draw.get_frame_time();
 
         // right-click should return to the last menu.
         // improve slider widget.
         // add scroll widget?
 
-        if let Some(layout) = &state.layout {
+        if let Some(layout) = &mut state.layout {
             match layout {
                 Layout::Main => Self::main(state, draw),
+                Layout::Zoom => Self::zoom(state, context, draw),
                 Layout::Begin => Self::begin(state, context, draw),
                 Layout::Setup => Self::setup(state, draw),
                 Layout::Close => Self::close(state, draw),
                 _ => Ok(()),
             }?;
+        } else {
+            if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+                Self::change_layout(state, Some(Layout::Main));
+                draw.enable_cursor();
+            }
         }
 
         Ok(())
     }
 
+    fn window_time_scale(window: &Window) -> f32 {
+        (window.time * 2.5).min(1.0)
+    }
+
     fn main(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(draw, state.world.is_some());
+        if state.world.is_some() {
+            Self::layout_back(state, draw, None)?;
+        }
+
+        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -497,7 +506,13 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.world.is_some(), "pwrmttl")?;
+            Self::draw_head_foot(
+                window,
+                draw,
+                state.world.is_some(),
+                "pwrmttl",
+                Self::window_time_scale(window),
+            )?;
 
             window.point = Self::INITIAL_POINT;
 
@@ -521,17 +536,86 @@ impl Layout {
         Ok(())
     }
 
+    fn zoom(
+        state: &mut State,
+        context: &mut Context,
+        draw: &mut RaylibDrawHandle<'_>,
+    ) -> anyhow::Result<()> {
+        let time = (state.window.time - 1.5).max(0.0);
+        let scale = (1.0 - time * 0.50).max(0.0);
+        let black = (1.0 - time * 0.75).max(0.0);
+        let scale = ease_in_out_cubic(scale);
+        let black = ease_in_out_cubic(black);
+        let shape = Vector2::new(
+            draw.get_render_width() as f32,
+            draw.get_render_height() as f32,
+        );
+
+        Self::draw_back(draw, state.world.is_some(), scale);
+
+        let mut draw = draw.begin_mode2D(Camera2D {
+            offset: Vector2::zero(),
+            target: Vector2::zero(),
+            rotation: 0.0,
+            zoom: 1.0,
+        });
+
+        let header = 1.0 - Self::window_time_scale(&state.window);
+
+        Self::draw_head_foot(
+            &mut state.window,
+            &mut draw,
+            state.world.is_some(),
+            "pwrmttl",
+            header,
+        )?;
+
+        draw.draw_rectangle_rec(
+            Rectangle::new(0.0, 0.0, shape.x, shape.y),
+            Color::new(0, 0, 0, 0).lerp(Color::BLACK, 1.0 - black),
+        );
+
+        if scale == 0.0 {
+            state.new_game(context)?;
+        }
+
+        Ok(())
+    }
+
+    fn layout_back(
+        state: &mut State,
+        draw: &mut RaylibDrawHandle<'_>,
+        layout: Option<Self>,
+    ) -> anyhow::Result<()> {
+        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE)
+            || draw.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT)
+        {
+            if layout.is_none() {
+                draw.disable_cursor();
+            }
+
+            Self::change_layout(state, layout);
+            state.window.asset.get_sound("data/audio/back.ogg")?.play();
+        }
+
+        Ok(())
+    }
+
     fn begin(
         state: &mut State,
         context: &mut Context,
         draw: &mut RaylibDrawHandle<'_>,
     ) -> anyhow::Result<()> {
-        Self::draw_back(draw, state.world.is_some());
-
-        if state.world.is_some() {
-            state.new_game(context)?;
+        if state.world.is_none() {
+            Self::change_layout(state, Some(Layout::Zoom));
+            draw.disable_cursor();
+            // draw zoom for a single frame to avoid flicker on transition from begin -> zoom.
+            Self::zoom(state, context, draw)?;
             return Ok(());
         }
+
+        Self::layout_back(state, draw, Some(Layout::Main))?;
+        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut layout = None;
         let mut accept = false;
@@ -545,7 +629,13 @@ impl Layout {
             });
 
             state.window.draw(&mut draw, |window, draw| {
-                Self::draw_head_foot(window, draw, state.world.is_some(), "begin")?;
+                Self::draw_head_foot(
+                    window,
+                    draw,
+                    state.world.is_some(),
+                    "begin",
+                    Self::window_time_scale(window),
+                )?;
 
                 window.point = Self::INITIAL_POINT;
 
@@ -572,7 +662,8 @@ impl Layout {
     }
 
     fn setup(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(draw, state.world.is_some());
+        Self::layout_back(state, draw, Some(Layout::Main))?;
+        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -584,7 +675,13 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.world.is_some(), "setup")?;
+            Self::draw_head_foot(
+                window,
+                draw,
+                state.world.is_some(),
+                "setup",
+                Self::window_time_scale(window),
+            )?;
 
             window.point = Self::INITIAL_POINT;
 
@@ -672,7 +769,8 @@ impl Layout {
     }
 
     fn close(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::draw_back(draw, state.world.is_some());
+        Self::layout_back(state, draw, Some(Layout::Main))?;
+        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -684,7 +782,13 @@ impl Layout {
         let mut layout = None;
 
         state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(window, draw, state.world.is_some(), "close")?;
+            Self::draw_head_foot(
+                window,
+                draw,
+                state.world.is_some(),
+                "close",
+                Self::window_time_scale(window),
+            )?;
 
             window.point = Self::INITIAL_POINT;
 
@@ -705,17 +809,17 @@ impl Layout {
         Ok(())
     }
 
-    fn draw_back(handle: &mut RaylibDrawHandle, in_game: bool) {
+    fn draw_back(handle: &mut RaylibDrawHandle, in_game: bool, scale: f32) {
         if in_game {
             return;
         }
 
         let time = handle.get_time() as f32 * 0.5;
-        let x = time.sin() * 8.0;
-        let z = time.cos() * 8.0;
+        let x = time.sin() * 8.0 * scale;
+        let z = time.cos() * 8.0 * scale;
 
         let mut draw = handle.begin_mode3D(Camera3D::perspective(
-            Vector3::new(x, 6.0, z),
+            Vector3::new(x, 6.0 * scale, z),
             Vector3::zero(),
             Vector3::up(),
             90.0,
@@ -749,13 +853,15 @@ impl Layout {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         in_game: bool,
         text: &str,
+        scale: f32,
     ) -> anyhow::Result<()> {
         let screen_size = Vector2::new(
             draw.get_render_width() as f32,
             draw.get_render_height() as f32,
         );
-        let head = Rectangle::new(0.0, 0.0, screen_size.x, 72.0);
-        let foot = Rectangle::new(0.0, screen_size.y - 72.0, screen_size.x, 72.0);
+        let scale = ease_in_out_cubic(scale);
+        let head = Rectangle::new(0.0, -72.0 * (1.0 - scale), screen_size.x, 72.0);
+        let foot = Rectangle::new(0.0, screen_size.y - 72.0 * scale, screen_size.x, 72.0);
         let full = Rectangle::new(0.0, 0.0, screen_size.x, screen_size.y);
 
         if in_game {
@@ -772,7 +878,7 @@ impl Layout {
         draw.draw_text_ex(
             font,
             text,
-            Vector2::new(16.0, 8.0),
+            Vector2::new(16.0, 8.0 + head.y),
             56.0,
             4.0,
             Color::GRAY.lerp(Color::BLACK, sin_b),
@@ -781,8 +887,19 @@ impl Layout {
         draw.draw_text_ex(
             font,
             text,
-            Vector2::new(16.0 + sin_a, 8.0 + sin_a),
+            Vector2::new(16.0 + sin_a, 8.0 + head.y + sin_a),
             56.0,
+            4.0,
+            Color::WHITE,
+        );
+
+        let font = window.font_label()?;
+
+        draw.draw_text_ex(
+            font,
+            State::VERSION,
+            Vector2::new(16.0, 16.0 + foot.y),
+            32.0,
             4.0,
             Color::WHITE,
         );

@@ -63,6 +63,7 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct World {
+    pub level: String,
     pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip, default = "World::default_camera")]
     pub camera_3d: Camera3D,
@@ -79,27 +80,24 @@ pub struct World {
 impl World {
     pub const TIME_STEP: f32 = 1.0 / 60.0;
 
-    pub fn new(state: &mut State, context: &mut Context) -> anyhow::Result<Self> {
-        let mut world = Self {
-            entity_list: Vec::default(),
-            camera_3d: Camera3D::perspective(
-                Vector3::default(),
-                Vector3::default(),
-                Vector3::up(),
-                90.0,
-            ),
-            camera_2d: Camera2D::default(),
-            physical: Physical::default(),
-            time: f32::default(),
-            step: f32::default(),
-        };
+    pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
+        let file = std::fs::read_to_string(path)?;
+        let mut file: Self = serde_json::from_str(&file)?;
 
-        let entity = Box::new(Player::new(state, context, &mut world)?);
-        world.entity_list.push(entity);
-        let entity = Box::new(Tina::new(state, context, &mut world)?);
-        world.entity_list.push(entity);
+        let model = state
+            .asset
+            .set_model(context, &format!("data/level/{}", file.level))?;
+        file.physical.new_model(model)?;
 
-        Ok(world)
+        unsafe {
+            let world = &mut file as *mut Self;
+
+            for entity in &mut file.entity_list {
+                entity.initialize(state, context, &mut *world)?;
+            }
+        }
+
+        Ok(file)
     }
 
     pub fn main(
@@ -115,6 +113,13 @@ impl World {
 
             while self.step >= Self::TIME_STEP {
                 self.physical.tick();
+
+                // improve this API, please.
+                if let Ok(lock) = &self.physical.collision_handler.collision_list.lock() {
+                    for event in lock.iter() {
+                        println!("{event:?}");
+                    }
+                }
 
                 unsafe {
                     let world = self as *mut Self;
@@ -138,6 +143,12 @@ impl World {
         }
         {
             let mut draw_3d = draw.begin_mode3D(self.camera_3d);
+
+            let model = state
+                .asset
+                .get_model(&format!("data/level/{}", self.level))?;
+
+            draw_3d.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
 
             unsafe {
                 let world = self as *mut Self;

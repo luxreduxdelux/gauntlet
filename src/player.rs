@@ -71,6 +71,7 @@ use serde::{Deserialize, Serialize};
 pub struct Player {
     point: Vector3,
     angle: Vector3,
+    #[serde(skip)]
     speed: Vector3,
     #[serde(skip)]
     collider: ColliderHandle,
@@ -87,8 +88,6 @@ pub struct Player {
     #[serde(skip)]
     clash: bool,
     #[serde(skip)]
-    focus: bool,
-    #[serde(skip)]
     shake: f32,
 }
 
@@ -96,39 +95,6 @@ impl Player {
     const ANGLE_MIN: f32 = -90.0;
     const ANGLE_MAX: f32 = 90.0;
     const CUBE_SHAPE: Vector3 = Vector3::new(0.25, 0.5, 0.25);
-
-    pub fn new(
-        state: &mut State,
-        context: &mut Context,
-        world: &mut World,
-    ) -> anyhow::Result<Self> {
-        world
-            .physical
-            .new_model(state.asset.get_model("data/level/level.glb")?)?;
-
-        let collider = world.physical.new_cuboid(Self::CUBE_SHAPE);
-        let mollider = world.physical.get_collider_mut(collider).unwrap();
-        mollider.set_translation(vector![0.0, 2.0, 0.0]);
-
-        // this has something to do with being stuck on the ground after a dash jump.
-        let mut character = KinematicCharacterController::default();
-        character.snap_to_ground = None;
-
-        Ok(Self {
-            point: Vector3::up() * 2.0,
-            angle: Vector3::default(),
-            speed: Vector3::default(),
-            collider,
-            character,
-            state: PlayerState::default(),
-            view: View::default(),
-            floor: bool::default(),
-            slide: bool::default(),
-            clash: bool::default(),
-            focus: true,
-            shake: f32::default(),
-        })
-    }
 
     fn movement(
         &mut self,
@@ -167,6 +133,30 @@ impl Player {
 
 #[typetag::serde]
 impl Entity for Player {
+    fn initialize(
+        &mut self,
+        state: &mut State,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        self.collider = world.physical.new_cuboid(Self::CUBE_SHAPE);
+        world
+            .physical
+            .set_collider_point(self.collider, self.point)?;
+
+        // this has something to do with being stuck on the ground after a dash jump.
+        self.character = KinematicCharacterController::default();
+        self.character.snap_to_ground = None;
+
+        self.view = View::new(
+            Vector3::up() * 2.0,
+            Vector3::default(),
+            state.setting.screen_field,
+        );
+
+        Ok(())
+    }
+
     fn get_point(&mut self) -> &mut Vector3 {
         &mut self.point
     }
@@ -185,11 +175,7 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        let model = state.asset.get_model("data/level/level.glb")?;
-
-        draw.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
-
-        //world.physical.draw();
+        world.physical.draw();
 
         //================================================================
 
@@ -206,7 +192,6 @@ impl Entity for Player {
 
         let mouse = draw.get_mouse_delta();
 
-        // remove when using render-target.
         self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
         self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
         self.angle.x %= 359.0;
@@ -231,16 +216,14 @@ impl Entity for Player {
 
         self.view.blend(draw, &PlayerState::view(self, state, draw));
 
-        let direction = Direction::new_from_angle(&self.angle);
+        let direction =
+            Direction::new_from_angle(&(self.angle + Vector3::new(0.0, 0.0, self.view.angle.z)));
+        let point = self.point + shake + self.view.point;
+        let focus = point + Vector3::new(self.view.angle.x, self.view.angle.y, 0.0) + direction.x;
 
-        world.camera_3d.position = self.point + shake + self.view.point;
-        world.camera_3d.target = self.point
-            + shake
-            + self.view.point
-            + Vector3::new(self.view.angle.x, self.view.angle.y, 0.0)
-            + direction.x;
-        world.camera_3d.up =
-            vector_3_rotate_by_axis_angle(direction.y, direction.x, self.view.angle.z.to_radians());
+        world.camera_3d.position = point;
+        world.camera_3d.target = focus;
+        world.camera_3d.up = direction.y;
         world.camera_3d.fovy = self.view.scale;
 
         Ok(())
@@ -250,15 +233,25 @@ impl Entity for Player {
         &mut self,
         _state: &mut State,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        let half = Vector2::new(
-            draw.get_render_width() as f32 * 0.5,
-            draw.get_render_height() as f32 * 0.5,
+        let full = Vector2::new(
+            draw.get_render_width() as f32,
+            draw.get_render_height() as f32,
         );
+        let half = full * 0.5;
 
         draw.draw_circle_v(half, 8.0, Color::BLACK);
         draw.draw_circle_v(half, 4.0, Color::WHITE);
+
+        let time = (world.time).min(1.0);
+        let scale = ease_in_out_cubic(time);
+
+        draw.draw_rectangle_v(
+            Vector2::zero(),
+            full,
+            Color::BLACK.lerp(Color::new(0, 0, 0, 0), scale),
+        );
 
         Ok(())
     }
@@ -269,18 +262,6 @@ impl Entity for Player {
         handle: &mut RaylibHandle,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        let focus = handle.is_window_focused();
-
-        // fix for annoying bug on ALT+TAB where mouse goes out of window for some reason
-        if self.focus != focus {
-            if focus {
-                handle.enable_cursor();
-                handle.disable_cursor();
-            }
-
-            self.focus = focus;
-        }
-
         self.movement(state, handle, world)?;
 
         state.setting.move_x_a.wipe();
@@ -556,8 +537,6 @@ impl PlayerState {
                     }
                 }
 
-                //
-
                 if state.setting.jump.press() {
                     player.speed.y = Self::SPEED_JUMP;
                     player.state = Self::Walk {
@@ -616,6 +595,7 @@ impl PlayerState {
                 // wall with an angle is acting kind of weird
                 // if player should fall/clash against a wall, make player unable to wall run until they touch the ground again.
                 // lock horizontal/vertical angle to limited range.
+                // use cast shape instead of ray cast for wall detection.
 
                 if wall_direction != direction || player.clash || wall_none {
                     player.speed += plane * Self::WALL_PLANE_FALL_FORCE;
