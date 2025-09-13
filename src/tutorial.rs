@@ -56,14 +56,15 @@ use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 enum TutorialKind {
+    #[default]
     Move,
     Jump,
     Duck,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Default)]
 pub struct Tutorial {
     point: Vector3,
     scale: Vector3,

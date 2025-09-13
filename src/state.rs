@@ -49,6 +49,7 @@
 */
 
 use crate::asset::*;
+use crate::external::*;
 use crate::setting::*;
 use crate::window::*;
 use crate::world::*;
@@ -58,9 +59,11 @@ use crate::world::*;
 use raylib::prelude::*;
 
 pub struct Context {
+    pub r3d: r3d::Handle,
     pub handle: RaylibHandle,
     pub thread: RaylibThread,
     pub audio: RaylibAudio,
+    icon: Image,
 }
 
 impl Context {
@@ -68,17 +71,23 @@ impl Context {
         let (mut handle, thread) = raylib::init()
             .size(1024, 768)
             .resizable()
-            .title("pwrmttl")
+            .title("pwrmttl.")
             .build();
 
+        let icon = Image::load_image("data/video/icon.png")?;
+
+        handle.set_window_icon(&icon);
         handle.set_exit_key(None);
 
         let audio = RaylibAudio::init_audio_device()?;
+        let r3d = r3d::Handle::new((1024, 768));
 
         Ok(Self {
+            r3d,
             handle,
             thread,
             audio,
+            icon,
         })
     }
 
@@ -165,6 +174,13 @@ impl<'a> State<'a> {
 
                 if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F2) {
                     self.new_game(context)?;
+                }
+
+                if (*ctx).handle.is_window_resized() {
+                    context.r3d.update_resolution((
+                        context.handle.get_screen_width(),
+                        context.handle.get_screen_height(),
+                    ));
                 }
 
                 let mut draw = context.handle.begin_drawing(&context.thread);

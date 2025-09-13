@@ -53,6 +53,7 @@
 // fix attaching to wall after jump off wall run
 
 use crate::entity::*;
+use crate::external::r3d;
 use crate::setting::*;
 use crate::state::*;
 use crate::utility::*;
@@ -172,25 +173,25 @@ impl Entity for Player {
     fn draw_3d(
         &mut self,
         state: &mut State,
-        draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         world.physical.draw();
 
         //================================================================
 
-        state.setting.move_x_a.poll(draw);
-        state.setting.move_x_b.poll(draw);
-        state.setting.move_z_a.poll(draw);
-        state.setting.move_z_b.poll(draw);
-        state.setting.jump.poll(draw);
-        state.setting.duck.poll(draw);
-        state.setting.fire_a.poll(draw);
-        state.setting.fire_b.poll(draw);
+        state.setting.move_x_a.poll(&context.handle);
+        state.setting.move_x_b.poll(&context.handle);
+        state.setting.move_z_a.poll(&context.handle);
+        state.setting.move_z_b.poll(&context.handle);
+        state.setting.jump.poll(&context.handle);
+        state.setting.duck.poll(&context.handle);
+        state.setting.fire_a.poll(&context.handle);
+        state.setting.fire_b.poll(&context.handle);
 
         //================================================================
 
-        let mouse = draw.get_mouse_delta();
+        let mouse = &context.handle.get_mouse_delta();
 
         self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
         self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
@@ -214,7 +215,10 @@ impl Entity for Player {
             }
         };
 
-        self.view.blend(draw, &PlayerState::view(self, state, draw));
+        self.view.blend(
+            &context.handle,
+            &PlayerState::view(self, state, &context.handle),
+        );
 
         let direction =
             Direction::new_from_angle(&(self.angle + Vector3::new(0.0, 0.0, self.view.angle.z)));
@@ -630,7 +634,7 @@ impl PlayerState {
         }
     }
 
-    fn view(player: &Player, state: &State, draw: &RaylibMode3D<'_, RaylibDrawHandle<'_>>) -> View {
+    fn view(player: &Player, state: &State, draw: &RaylibHandle) -> View {
         match player.state {
             Self::Walk { jump, .. } => {
                 let direction = Direction::new_from_angle(&player.angle);

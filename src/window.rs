@@ -510,7 +510,7 @@ impl Layout {
                 window,
                 draw,
                 state.world.is_some(),
-                "pwrmttl",
+                "pwrmttl.",
                 Self::window_time_scale(window),
             )?;
 
@@ -566,7 +566,7 @@ impl Layout {
             &mut state.window,
             &mut draw,
             state.world.is_some(),
-            "pwrmttl",
+            "pwrmttl.",
             header,
         )?;
 
@@ -633,7 +633,7 @@ impl Layout {
                     window,
                     draw,
                     state.world.is_some(),
-                    "begin",
+                    "begin.",
                     Self::window_time_scale(window),
                 )?;
 
@@ -679,7 +679,7 @@ impl Layout {
                 window,
                 draw,
                 state.world.is_some(),
-                "setup",
+                "setup.",
                 Self::window_time_scale(window),
             )?;
 
@@ -786,7 +786,7 @@ impl Layout {
                 window,
                 draw,
                 state.world.is_some(),
-                "close",
+                "close.",
                 Self::window_time_scale(window),
             )?;
 

@@ -13,5 +13,10 @@ serde_json = { version = "1.0" }
 rfd        = { version = "0.15.4" }
 typetag    = { version = "0.2.20" }
 
+[build-dependencies]
+cmake 	= "0.1"
+bindgen = "0.71.0"
+
 [profile.dev.package.rapier3d]
 opt-level = 3
+

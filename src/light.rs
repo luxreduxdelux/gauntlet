@@ -48,95 +48,63 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::entity::*;
+use crate::external::r3d::LightType;
 use crate::state::*;
-
-//================================================================
+use crate::utility::*;
+use crate::world::*;
 
 use raylib::prelude::*;
-use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 
-//================================================================
-
-#[derive(Default)]
-pub struct Asset<'a> {
-    model: HashMap<String, crate::external::r3d::Model>,
-    sound: HashMap<String, Sound<'a>>,
-    font: HashMap<String, Font>,
+#[derive(Serialize, Deserialize)]
+pub struct Light {
+    point: Vector3,
+    angle: Vector3,
+    mode: LightType,
+    color: Color,
+    #[serde(skip)]
+    speed: Vector3,
+    #[serde(skip)]
+    handle: Option<crate::external::r3d::Light>,
 }
 
-impl<'a> Asset<'a> {
-    pub fn set_model(
+impl Light {}
+
+#[typetag::serde]
+impl Entity for Light {
+    fn initialize(
         &mut self,
+        _state: &mut State,
         context: &mut Context,
-        name: &str,
-    ) -> anyhow::Result<&mut crate::external::r3d::Model> {
-        //let mut model = context.r3d.load_model(&context.thread, name)?;
-        let model = crate::external::r3d::Model::new(&mut context.r3d, name);
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        let mut light = crate::external::r3d::Light::new(&mut context.r3d, self.mode);
 
-        /*
-        // create mip-map.
-        for material in model.materials_mut() {
-            for map in material.maps_mut() {
-                let texture = map.texture_mut();
+        light.set_active(true);
+        light.set_color(self.color);
 
-                if texture.id > 0 {
-                    texture.gen_texture_mipmaps();
-                    texture
-                        .set_texture_filter(&context.thread, TextureFilter::TEXTURE_FILTER_POINT);
-                }
-            }
-        }
-        */
+        let direction = Direction::new_from_angle(&self.angle);
 
-        self.model.insert(name.to_string(), model);
+        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 16.0);
+        light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
+        light.enable_shadow(512);
+        light.look_at(self.point, self.point + direction.x);
 
-        self.get_model(name)
+        self.handle = Some(light);
+
+        Ok(())
     }
 
-    pub fn get_model(&mut self, name: &str) -> anyhow::Result<&mut crate::external::r3d::Model> {
-        self.model.get_mut(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_model(): Could not find asset \"{name}\"."
-        )))
+    fn get_point(&mut self) -> &mut Vector3 {
+        &mut self.point
     }
 
-    pub fn set_sound(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Sound<'a>> {
-        let sound = context.audio.new_sound(name)?;
-
-        self.sound.insert(name.to_string(), sound);
-
-        self.get_sound(name)
+    fn get_angle(&mut self) -> &mut Vector3 {
+        &mut self.angle
     }
 
-    pub fn get_sound(&self, name: &str) -> anyhow::Result<&Sound<'a>> {
-        self.sound.get(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_sound(): Could not find asset \"{name}\"."
-        )))
-    }
-
-    pub fn set_font(
-        &mut self,
-        context: &mut Context,
-        name: &str,
-        size: i32,
-    ) -> anyhow::Result<&Font> {
-        let font = context
-            .handle
-            .load_font_ex(&context.thread, name, size, None)?;
-
-        self.font.insert(name.to_string(), font);
-
-        self.get_font(name)
-    }
-
-    pub fn get_font(&self, name: &str) -> anyhow::Result<&Font> {
-        self.font.get(name).ok_or(anyhow::Error::msg(format!(
-            "Asset::get_font(): Could not find asset \"{name}\"."
-        )))
-    }
-}
-
-impl Drop for Asset<'_> {
-    fn drop(&mut self) {
-        // TO-DO manually un-load each texture for each model, as raylib does not normally do that.
+    fn get_speed(&mut self) -> &mut Vector3 {
+        &mut self.speed
     }
 }

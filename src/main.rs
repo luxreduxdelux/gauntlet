@@ -50,8 +50,11 @@
 
 mod asset;
 mod entity;
+mod external;
+mod light;
 mod physical;
 mod player;
+mod scene;
 mod setting;
 mod state;
 mod tina;

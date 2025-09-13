@@ -50,9 +50,9 @@
 
 use crate::entity::*;
 use crate::physical::*;
-use crate::player::*;
+use crate::scene::*;
 use crate::state::*;
-use crate::tina::*;
+use crate::tutorial::Tutorial;
 
 //================================================================
 
@@ -65,6 +65,8 @@ use serde::Deserialize;
 pub struct World {
     pub level: String,
     pub entity_list: Vec<Box<dyn Entity>>,
+    #[serde(skip)]
+    pub scene: Option<Scene>,
     #[serde(skip, default = "World::default_camera")]
     pub camera_3d: Camera3D,
     #[serde(skip)]
@@ -78,7 +80,7 @@ pub struct World {
 }
 
 impl World {
-    pub const TIME_STEP: f32 = 1.0 / 60.0;
+    pub const TIME_STEP: f32 = 1.0 / 144.0;
 
     pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
@@ -88,6 +90,8 @@ impl World {
             .asset
             .set_model(context, &format!("data/level/{}", file.level))?;
         file.physical.new_model(model)?;
+
+        file.scene = Some(Scene::new(context));
 
         unsafe {
             let world = &mut file as *mut Self;
@@ -142,21 +146,31 @@ impl World {
             }
         }
         {
+            let ctx = context as *mut Context;
+
+            context.r3d.render(self.camera_3d, |r3d| {
+                let model = state
+                    .asset
+                    .get_model(&format!("data/level/{}", self.level))
+                    .unwrap();
+
+                model.draw(r3d, Vector3::zero(), 1.0);
+
+                unsafe {
+                    let world = self as *mut Self;
+
+                    for entity in &mut self.entity_list {
+                        entity.draw_3d(state, &mut *ctx, &mut *world).unwrap();
+                    }
+                }
+            });
+
+            /*
             let mut draw_3d = draw.begin_mode3D(self.camera_3d);
 
-            let model = state
-                .asset
-                .get_model(&format!("data/level/{}", self.level))?;
 
             draw_3d.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
-
-            unsafe {
-                let world = self as *mut Self;
-
-                for entity in &mut self.entity_list {
-                    entity.draw_3d(state, &mut draw_3d, &mut *world)?;
-                }
-            }
+            */
         }
         {
             let mut draw_2d = draw.begin_mode2D(Camera2D {

@@ -80,20 +80,15 @@ pub struct Physical {
 }
 
 impl Physical {
-    pub fn new_model(&mut self, model: &Model) -> anyhow::Result<()> {
+    pub fn new_model(&mut self, model: &crate::external::r3d::Model) -> anyhow::Result<()> {
         for mesh in model.meshes() {
             let list_vertex = mesh
                 .vertices()
                 .iter()
-                .map(|v| point![v.x, v.y, v.z])
+                .map(|v| point![v.position().x, v.position().y, v.position().z])
                 .collect();
             let mut list_index = Vec::new();
-            let index = unsafe {
-                std::slice::from_raw_parts(
-                    mesh.indices as *const u16,
-                    mesh.triangleCount as usize * 3,
-                )
-            };
+            let index = mesh.indicies();
 
             for x in 0..index.len() / 3 {
                 list_index.push([
@@ -165,7 +160,10 @@ impl Physical {
     }
 
     pub fn new_cuboid(&mut self, shape: Vector3) -> ColliderHandle {
-        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z).active_events(ActiveEvents::COLLISION_EVENTS).active_collision_types(ActiveCollisionTypes::all()).build();
+        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
+            .active_events(ActiveEvents::COLLISION_EVENTS)
+            .active_collision_types(ActiveCollisionTypes::all())
+            .build();
 
         self.collider_set.insert(collider)
     }

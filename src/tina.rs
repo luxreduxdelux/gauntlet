@@ -94,18 +94,17 @@ impl Entity for Tina {
     fn draw_3d(
         &mut self,
         state: &mut State,
-        draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         let model = state.asset.get_model("data/video/tina.glb")?;
 
-        let direction = Direction::new_from_angle(&self.angle);
+        let point = (context.handle.get_time() as f32 * 3.0).sin() * 4.0;
 
-        draw.draw_ray(Ray::new(self.point, direction.x), Color::RED);
-        draw.draw_ray(Ray::new(self.point, direction.y), Color::GREEN);
-        draw.draw_ray(Ray::new(self.point, direction.z), Color::BLUE);
-
-        draw_model_transform(draw, model, self.point, self.angle, 0.5);
+        model.draw(
+            &mut context.r3d,
+            self.point + Vector3::new(0.0, point.max(0.0), 0.0), 0.5,
+        );
 
         Ok(())
     }

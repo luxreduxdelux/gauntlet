@@ -48,6 +48,8 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use std::any::Any;
+
 use crate::state::*;
 use crate::world::*;
 
@@ -58,7 +60,7 @@ use raylib::prelude::*;
 //================================================================
 
 #[typetag::serde(tag = "type")]
-pub trait Entity {
+pub trait Entity: Any {
     fn initialize(
         &mut self,
         state: &mut State,
@@ -91,7 +93,7 @@ pub trait Entity {
     fn draw_3d(
         &mut self,
         _state: &mut State,
-        _draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
+        _context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
@@ -119,5 +121,24 @@ pub trait Entity {
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
+    }
+    fn touch(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+        _other: &mut Box<dyn Entity>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+impl dyn Entity {
+    pub fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    pub fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
