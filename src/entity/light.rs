@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::entity::*;
+use crate::entity::implementation::*;
 use crate::external::r3d::LightType;
 use crate::state::*;
 use crate::utility::*;
@@ -63,8 +63,6 @@ pub struct Light {
     angle: Vector3,
     mode: LightType,
     color: Color,
-    #[serde(skip)]
-    speed: Vector3,
     #[serde(skip)]
     handle: Option<crate::external::r3d::Light>,
 }
@@ -94,17 +92,5 @@ impl Entity for Light {
         self.handle = Some(light);
 
         Ok(())
-    }
-
-    fn get_point(&mut self) -> &mut Vector3 {
-        &mut self.point
-    }
-
-    fn get_angle(&mut self) -> &mut Vector3 {
-        &mut self.angle
-    }
-
-    fn get_speed(&mut self) -> &mut Vector3 {
-        &mut self.speed
     }
 }

@@ -59,7 +59,7 @@ use std::fmt::Display;
 //================================================================
 
 #[derive(Serialize, Deserialize)]
-pub struct Setting {
+pub struct User {
     pub tutorial: bool,
     pub screen_full: bool,
     pub screen_field: f32,
@@ -79,11 +79,11 @@ pub struct Setting {
     pub fire_b: Input,
 }
 
-impl Setting {
-    const PATH_FILE: &'static str = "setting.json";
+impl User {
+    const PATH_FILE: &'static str = "user.json";
 }
 
-impl Default for Setting {
+impl Default for User {
     fn default() -> Self {
         if let Ok(file) = std::fs::read_to_string(Self::PATH_FILE)
             && let Ok(data) = serde_json::from_str(&file)
@@ -113,7 +113,7 @@ impl Default for Setting {
     }
 }
 
-impl Drop for Setting {
+impl Drop for User {
     fn drop(&mut self) {
         if let Ok(data) = serde_json::to_string_pretty(self)
             && let Err(error) = std::fs::write(Self::PATH_FILE, data)

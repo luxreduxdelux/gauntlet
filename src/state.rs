@@ -50,7 +50,7 @@
 
 use crate::asset::*;
 use crate::external::*;
-use crate::setting::*;
+use crate::user::*;
 use crate::window::*;
 use crate::world::*;
 
@@ -63,7 +63,6 @@ pub struct Context {
     pub handle: RaylibHandle,
     pub thread: RaylibThread,
     pub audio: RaylibAudio,
-    icon: Image,
 }
 
 impl Context {
@@ -74,9 +73,6 @@ impl Context {
             .title("pwrmttl.")
             .build();
 
-        let icon = Image::load_image("data/video/icon.png")?;
-
-        handle.set_window_icon(&icon);
         handle.set_exit_key(None);
 
         let audio = RaylibAudio::init_audio_device()?;
@@ -87,17 +83,16 @@ impl Context {
             handle,
             thread,
             audio,
-            icon,
         })
     }
 
-    pub fn apply_setting(&mut self, setting: &Setting) {
-        if setting.screen_full {
+    pub fn apply_user(&mut self, user: &User) {
+        if user.screen_full {
             self.handle.set_window_size(1920, 1080);
             self.handle.toggle_fullscreen();
         }
 
-        self.handle.set_target_fps(setting.screen_rate as u32);
+        self.handle.set_target_fps(user.screen_rate as u32);
     }
 }
 
@@ -110,7 +105,7 @@ pub struct State<'a> {
     pub asset: Asset<'a>,
     pub window: Window<'a>,
     pub layout: Option<Layout>,
-    pub setting: Setting,
+    pub user: User,
 }
 
 impl<'a> State<'a> {
@@ -178,8 +173,8 @@ impl<'a> State<'a> {
 
                 if (*ctx).handle.is_window_resized() {
                     context.r3d.update_resolution((
-                        context.handle.get_screen_width(),
-                        context.handle.get_screen_height(),
+                        context.handle.get_screen_width() / 3,
+                        context.handle.get_screen_height() / 3,
                     ));
                 }
 

@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::entity::*;
+use crate::entity::implementation::*;
 use crate::state::*;
 use crate::utility::*;
 use crate::world::*;
@@ -60,8 +60,6 @@ use serde::{Deserialize, Serialize};
 pub struct Tina {
     point: Vector3,
     angle: Vector3,
-    #[serde(skip)]
-    speed: Vector3,
 }
 
 impl Tina {}
@@ -79,18 +77,6 @@ impl Entity for Tina {
         Ok(())
     }
 
-    fn get_point(&mut self) -> &mut Vector3 {
-        &mut self.point
-    }
-
-    fn get_angle(&mut self) -> &mut Vector3 {
-        &mut self.angle
-    }
-
-    fn get_speed(&mut self) -> &mut Vector3 {
-        &mut self.speed
-    }
-
     fn draw_3d(
         &mut self,
         state: &mut State,
@@ -103,7 +89,8 @@ impl Entity for Tina {
 
         model.draw(
             &mut context.r3d,
-            self.point + Vector3::new(0.0, point.max(0.0), 0.0), 0.5,
+            self.point + Vector3::new(0.0, point.max(0.0), 0.0),
+            0.5,
         );
 
         Ok(())

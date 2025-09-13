@@ -52,10 +52,10 @@
 // bunny hop player movement state: if you slide, jump, then hit the next jump immediately after falling, every subsequent jump will have increased forward velocity with the limitation of less strafe movement
 // fix attaching to wall after jump off wall run
 
-use crate::entity::*;
+use crate::entity::implementation::*;
 use crate::external::r3d;
-use crate::setting::*;
 use crate::state::*;
+use crate::user::*;
 use crate::utility::*;
 use crate::world::*;
 
@@ -152,22 +152,10 @@ impl Entity for Player {
         self.view = View::new(
             Vector3::up() * 2.0,
             Vector3::default(),
-            state.setting.screen_field,
+            state.user.screen_field,
         );
 
         Ok(())
-    }
-
-    fn get_point(&mut self) -> &mut Vector3 {
-        &mut self.point
-    }
-
-    fn get_angle(&mut self) -> &mut Vector3 {
-        &mut self.angle
-    }
-
-    fn get_speed(&mut self) -> &mut Vector3 {
-        &mut self.speed
     }
 
     fn draw_3d(
@@ -180,21 +168,21 @@ impl Entity for Player {
 
         //================================================================
 
-        state.setting.move_x_a.poll(&context.handle);
-        state.setting.move_x_b.poll(&context.handle);
-        state.setting.move_z_a.poll(&context.handle);
-        state.setting.move_z_b.poll(&context.handle);
-        state.setting.jump.poll(&context.handle);
-        state.setting.duck.poll(&context.handle);
-        state.setting.fire_a.poll(&context.handle);
-        state.setting.fire_b.poll(&context.handle);
+        state.user.move_x_a.poll(&context.handle);
+        state.user.move_x_b.poll(&context.handle);
+        state.user.move_z_a.poll(&context.handle);
+        state.user.move_z_b.poll(&context.handle);
+        state.user.jump.poll(&context.handle);
+        state.user.duck.poll(&context.handle);
+        state.user.fire_a.poll(&context.handle);
+        state.user.fire_b.poll(&context.handle);
 
         //================================================================
 
         let mouse = &context.handle.get_mouse_delta();
 
-        self.angle.x -= mouse.x * 0.1 * state.setting.mouse_speed;
-        self.angle.y += mouse.y * 0.1 * state.setting.mouse_speed;
+        self.angle.x -= mouse.x * 0.1 * state.user.mouse_speed;
+        self.angle.y += mouse.y * 0.1 * state.user.mouse_speed;
         self.angle.x %= 359.0;
         self.angle.y = self.angle.y.clamp(Self::ANGLE_MIN, Self::ANGLE_MAX);
 
@@ -268,14 +256,14 @@ impl Entity for Player {
     ) -> anyhow::Result<()> {
         self.movement(state, handle, world)?;
 
-        state.setting.move_x_a.wipe();
-        state.setting.move_x_b.wipe();
-        state.setting.move_z_a.wipe();
-        state.setting.move_z_b.wipe();
-        state.setting.jump.wipe();
-        state.setting.duck.wipe();
-        state.setting.fire_a.wipe();
-        state.setting.fire_b.wipe();
+        state.user.move_x_a.wipe();
+        state.user.move_x_b.wipe();
+        state.user.move_z_a.wipe();
+        state.user.move_z_b.wipe();
+        state.user.jump.wipe();
+        state.user.duck.wipe();
+        state.user.fire_a.wipe();
+        state.user.fire_b.wipe();
 
         Ok(())
     }
@@ -362,17 +350,9 @@ impl PlayerState {
 
                 let move_angle = Direction::new_from_angle(&Vector3::new(player.angle.x, 0.0, 0.0));
                 let move_x = move_angle.x
-                    * Self::get_movement_key(
-                        handle,
-                        state.setting.move_x_a,
-                        state.setting.move_x_b,
-                    );
+                    * Self::get_movement_key(handle, state.user.move_x_a, state.user.move_x_b);
                 let move_z = move_angle.z
-                    * Self::get_movement_key(
-                        handle,
-                        state.setting.move_z_a,
-                        state.setting.move_z_b,
-                    );
+                    * Self::get_movement_key(handle, state.user.move_z_a, state.user.move_z_b);
                 let move_which = move_x + move_z;
                 let move_where = move_which.normalized();
                 let move_speed = move_which.length();
@@ -390,15 +370,15 @@ impl PlayerState {
                         player.speed.y = 0.0;
                     }
 
-                    if state.setting.jump.down(handle) {
+                    if state.user.jump.down(handle) {
                         player.speed.y = Self::SPEED_JUMP;
                         *jump = 0.5;
                     }
 
-                    if state.setting.duck.press() && *time <= 0.0 {
-                        if state.setting.move_z_a.down(handle)
-                            || state.setting.move_x_b.down(handle)
-                            || state.setting.move_z_b.down(handle)
+                    if state.user.duck.press() && *time <= 0.0 {
+                        if state.user.move_z_a.down(handle)
+                            || state.user.move_x_b.down(handle)
+                            || state.user.move_z_b.down(handle)
                         {
                             player.speed = move_which * 0.75;
                             player.speed.y = Self::SPEED_JUMP;
@@ -498,8 +478,8 @@ impl PlayerState {
                                 player.state = Self::Wall {
                                     direction: Self::get_movement_key(
                                         handle,
-                                        state.setting.move_z_a,
-                                        state.setting.move_z_b,
+                                        state.user.move_z_a,
+                                        state.user.move_z_b,
                                     ),
                                     plane,
                                     ray: move_z,
@@ -509,7 +489,7 @@ impl PlayerState {
                         }
                     }
 
-                    if state.setting.duck.press() {
+                    if state.user.duck.press() {
                         player.speed.x = 0.0;
                         player.speed.y = -8.0;
                         player.speed.z = 0.0;
@@ -541,7 +521,7 @@ impl PlayerState {
                     }
                 }
 
-                if state.setting.jump.press() {
+                if state.user.jump.press() {
                     player.speed.y = Self::SPEED_JUMP;
                     player.state = Self::Walk {
                         time: 0.35,
@@ -572,7 +552,7 @@ impl PlayerState {
                 ray,
             } => {
                 let wall_direction =
-                    Self::get_movement_key(handle, state.setting.move_z_a, state.setting.move_z_b);
+                    Self::get_movement_key(handle, state.user.move_z_a, state.user.move_z_b);
                 let mut wall_none = true;
 
                 let ray_list = [
@@ -611,7 +591,7 @@ impl PlayerState {
                     return;
                 }
 
-                if state.setting.jump.press() {
+                if state.user.jump.press() {
                     player.speed += plane * Self::WALL_PLANE_JUMP_FORCE * 0.5;
                     player.speed.y = Self::SPEED_JUMP * 1.25;
                     player.state = Self::Walk {
@@ -622,7 +602,7 @@ impl PlayerState {
                     return;
                 }
 
-                if state.setting.duck.press() {
+                if state.user.duck.press() {
                     player.speed += plane * Self::WALL_PLANE_JUMP_FORCE * 2.0;
                     player.state = Self::Walk {
                         time: Self::WALL_PLANE_JUMP_TIME,
@@ -642,8 +622,7 @@ impl PlayerState {
                 let speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
                 let scale = (draw.get_time() as f32 * 8.0).sin();
                 let tilt = if player.speed.y.abs() > 0.0 {
-                    Self::get_movement_key(draw, state.setting.move_z_a, state.setting.move_z_b)
-                        * -0.75
+                    Self::get_movement_key(draw, state.user.move_z_a, state.user.move_z_b) * -0.75
                 } else {
                     (direction.z.dot(speed) / 4.5) * -2.5
                 };
@@ -662,7 +641,7 @@ impl PlayerState {
                             0.0,
                         ),
                     Vector3::new(0.0, jump * 0.1, tilt),
-                    state.setting.screen_field,
+                    state.user.screen_field,
                 )
             }
             Self::Dash { .. } => {
@@ -675,18 +654,18 @@ impl PlayerState {
                 View::new(
                     Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0),
                     Vector3::new(0.0, x, z),
-                    state.setting.screen_field + 10.0,
+                    state.user.screen_field + 10.0,
                 )
             }
             Self::Duck { .. } => View::new(
                 Vector3::new(0.0, 0.25 - Player::CUBE_SHAPE.y, 0.0),
                 Vector3::new(0.0, 0.1, 0.0),
-                state.setting.screen_field + 10.0,
+                state.user.screen_field + 10.0,
             ),
             Self::Slam { .. } => View::new(
                 Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON, 0.0),
                 Vector3::new(0.0, 0.0, 0.0),
-                state.setting.screen_field + 10.0,
+                state.user.screen_field + 10.0,
             ),
             Self::Wall { direction, .. } => {
                 let speed = player.speed.length() / 8.0;
@@ -696,7 +675,7 @@ impl PlayerState {
                 View::new(
                     Vector3::new(0.0, Player::CUBE_SHAPE.y - f32::EPSILON + cos, sin),
                     Vector3::new(0.0, 0.0, direction * 2.5),
-                    state.setting.screen_field + 10.0,
+                    state.user.screen_field + 10.0,
                 )
             }
         }

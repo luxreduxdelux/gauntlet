@@ -48,40 +48,8 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-mod asset;
-mod entity;
-mod external;
-mod physical;
-mod scene;
-mod state;
-mod user;
-mod utility;
-mod window;
-mod world;
-
-//================================================================
-
-use crate::state::*;
-
-//================================================================
-
-fn main() -> anyhow::Result<()> {
-    let mut context = Context::new()?;
-    let mut state = State::default();
-
-    context.apply_user(&state.user);
-
-    //================================================================
-
-    unsafe {
-        let context = &mut context as *mut Context;
-        State::error(state.initialize(&mut *context));
-    };
-
-    State::error(state.main(&mut context));
-
-    // weird drop bug in raylib-rs will cause state to drop incorrectly.
-    drop(state);
-
-    Ok(())
-}
+pub mod implementation;
+pub mod light;
+pub mod player;
+pub mod tina;
+pub mod tutorial;

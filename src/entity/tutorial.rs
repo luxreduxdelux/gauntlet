@@ -48,97 +48,75 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use std::any::Any;
-
+use crate::entity::implementation::*;
 use crate::state::*;
 use crate::world::*;
 
-//================================================================
-
+use rapier3d::prelude::*;
 use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
 
-//================================================================
+#[derive(Serialize, Deserialize, Default)]
+enum TutorialKind {
+    #[default]
+    Move,
+    Jump,
+    Duck,
+}
 
-#[typetag::serde(tag = "type")]
-pub trait Entity: Any {
+#[derive(Serialize, Deserialize, Default)]
+pub struct Tutorial {
+    point: Vector3,
+    scale: Vector3,
+    which: TutorialKind,
+    #[serde(skip)]
+    collider: ColliderHandle,
+}
+
+impl Tutorial {}
+
+#[typetag::serde]
+impl Entity for Tutorial {
     fn initialize(
         &mut self,
         state: &mut State,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        self.collider = world.physical.new_cuboid(self.scale);
+        world
+            .physical
+            .set_collider_point(self.collider, self.point)?;
+        world.physical.set_collider_sensor(self.collider, true)?;
+
         Ok(())
     }
 
-    //================================================================
-
-    fn get_point(&mut self) -> &mut Vector3;
-    fn get_angle(&mut self) -> &mut Vector3;
-    fn get_speed(&mut self) -> &mut Vector3;
-
-    //================================================================
-
-    fn set_point(&mut self, value: Vector3) {
-        *self.get_point() = value;
-    }
-    fn set_angle(&mut self, value: Vector3) {
-        *self.get_angle() = value;
-    }
-    fn set_speed(&mut self, value: Vector3) {
-        *self.get_speed() = value;
-    }
-
-    //================================================================
-
-    fn draw_3d(
-        &mut self,
-        _state: &mut State,
-        _context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
     fn draw_2d(
         &mut self,
-        _state: &mut State,
-        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        state: &mut State,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn main(
-        &mut self,
-        _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn tick(
-        &mut self,
-        _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-    fn touch(
-        &mut self,
-        _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
-        _other: &mut Box<dyn Entity>,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-}
+        let half = Vector2::new(
+            draw.get_render_width() as f32 * 0.5,
+            draw.get_render_height() as f32 * 0.5,
+        );
 
-impl dyn Entity {
-    pub fn as_any(&self) -> &dyn Any {
-        self
-    }
+        return Ok(());
 
-    pub fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
+        match self.which {
+            TutorialKind::Move => {
+                draw.draw_text("foo", half.x as i32, half.y as i32, 32, Color::RED);
+            }
+            TutorialKind::Jump => {
+                draw.draw_text("bar", half.x as i32, half.y as i32, 32, Color::RED);
+            }
+            TutorialKind::Duck => {
+                draw.draw_text("baz", half.x as i32, half.y as i32, 32, Color::RED);
+            }
+        }
+
+        Ok(())
     }
 }

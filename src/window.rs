@@ -53,8 +53,8 @@
 // cube should also animate, rotating like a rubik's cube
 
 use crate::asset::*;
-use crate::setting::*;
 use crate::state::*;
+use crate::user::*;
 use crate::utility::*;
 
 //================================================================
@@ -685,9 +685,9 @@ impl Layout {
 
             window.point = Self::INITIAL_POINT;
 
-            window.toggle(draw, "play tutorial", &mut state.setting.tutorial)?;
+            window.toggle(draw, "play tutorial", &mut state.user.tutorial)?;
             if window
-                .toggle(draw, "screen full", &mut state.setting.screen_full)?
+                .toggle(draw, "screen full", &mut state.user.screen_full)?
                 .press
             {
                 if draw.is_window_fullscreen() {
@@ -701,58 +701,58 @@ impl Layout {
             window.slider(
                 draw,
                 "screen field",
-                &mut state.setting.screen_field,
+                &mut state.user.screen_field,
                 (60.0, 120.0, 1.0),
             )?;
             window.slider(
                 draw,
                 "screen shake",
-                &mut state.setting.screen_shake,
+                &mut state.user.screen_shake,
                 (0.0, 2.0, 0.1),
             )?;
             window.slider(
                 draw,
                 "screen tilt",
-                &mut state.setting.screen_tilt,
+                &mut state.user.screen_tilt,
                 (0.0, 2.0, 0.1),
             )?;
             if window
                 .slider(
                     draw,
                     "screen rate",
-                    &mut state.setting.screen_rate,
+                    &mut state.user.screen_rate,
                     (30.0, 300.0, 1.0),
                 )?
                 .release
             {
-                draw.set_target_fps(state.setting.screen_rate as u32);
+                draw.set_target_fps(state.user.screen_rate as u32);
             }
             window.slider(
                 draw,
                 "mouse speed",
-                &mut state.setting.mouse_speed,
+                &mut state.user.mouse_speed,
                 (0.0, 2.0, 0.1),
             )?;
             window.slider(
                 draw,
                 "sound volume",
-                &mut state.setting.volume_sound,
+                &mut state.user.volume_sound,
                 (0.0, 1.0, 0.1),
             )?;
             window.slider(
                 draw,
                 "music volume",
-                &mut state.setting.volume_music,
+                &mut state.user.volume_music,
                 (0.0, 1.0, 0.1),
             )?;
-            window.action(draw, "move x+", &mut state.setting.move_x_a)?;
-            window.action(draw, "move x-", &mut state.setting.move_x_b)?;
-            window.action(draw, "move z+", &mut state.setting.move_z_a)?;
-            window.action(draw, "move z-", &mut state.setting.move_z_b)?;
-            window.action(draw, "jump", &mut state.setting.jump)?;
-            window.action(draw, "duck", &mut state.setting.duck)?;
-            window.action(draw, "fire a", &mut state.setting.fire_a)?;
-            window.action(draw, "fire b", &mut state.setting.fire_b)?;
+            window.action(draw, "move x+", &mut state.user.move_x_a)?;
+            window.action(draw, "move x-", &mut state.user.move_x_b)?;
+            window.action(draw, "move z+", &mut state.user.move_z_a)?;
+            window.action(draw, "move z-", &mut state.user.move_z_b)?;
+            window.action(draw, "jump", &mut state.user.jump)?;
+            window.action(draw, "duck", &mut state.user.duck)?;
+            window.action(draw, "fire a", &mut state.user.fire_a)?;
+            window.action(draw, "fire b", &mut state.user.fire_b)?;
 
             if window.button(draw, "return")?.press {
                 layout = Some(Self::Main);

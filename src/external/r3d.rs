@@ -77,6 +77,7 @@ impl Handle {
     pub fn new(resolution: (i32, i32)) -> Self {
         unsafe {
             ffi::R3D_Init(resolution.0, resolution.1, 0);
+            ffi::R3D_SetTextureFilter(0);
         }
 
         Self {}
@@ -85,6 +86,24 @@ impl Handle {
     pub fn render<T: FnMut(&mut Self)>(&mut self, camera: Camera3D, mut call: T) {
         unsafe {
             ffi::R3D_Begin(camera.into());
+
+            call(self);
+
+            ffi::R3D_End();
+        }
+    }
+
+    pub fn render_ex<T: FnMut(&mut Self)>(
+        &mut self,
+        camera: Camera3D,
+        target: &mut RenderTexture2D,
+        mut call: T,
+    ) {
+        unsafe {
+            let target =
+                target as *mut raylib::prelude::RenderTexture2D as *const ffi::RenderTexture;
+
+            ffi::R3D_BeginEx(camera.into(), target);
 
             call(self);
 

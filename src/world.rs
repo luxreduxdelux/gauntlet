@@ -48,11 +48,10 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::entity::*;
+use crate::entity::implementation::*;
 use crate::physical::*;
 use crate::scene::*;
 use crate::state::*;
-use crate::tutorial::Tutorial;
 
 //================================================================
 
@@ -77,6 +76,8 @@ pub struct World {
     pub time: f32,
     #[serde(skip)]
     step: f32,
+    #[serde(skip)]
+    texture: Option<RenderTexture2D>,
 }
 
 impl World {
@@ -92,6 +93,12 @@ impl World {
         file.physical.new_model(model)?;
 
         file.scene = Some(Scene::new(context));
+
+        file.texture = Some(
+            context
+                .handle
+                .load_render_texture(&context.thread, 1024, 768)?,
+        );
 
         unsafe {
             let world = &mut file as *mut Self;
@@ -145,10 +152,12 @@ impl World {
                 entity.main(state, draw, &mut *world)?;
             }
         }
-        {
+        unsafe {
+            let wrl = self as *mut Self;
             let ctx = context as *mut Context;
+            let txt = (*wrl).texture.as_mut().unwrap();
 
-            context.r3d.render(self.camera_3d, |r3d| {
+            context.r3d.render_ex(self.camera_3d, txt, |r3d| {
                 let model = state
                     .asset
                     .get_model(&format!("data/level/{}", self.level))
@@ -156,21 +165,10 @@ impl World {
 
                 model.draw(r3d, Vector3::zero(), 1.0);
 
-                unsafe {
-                    let world = self as *mut Self;
-
-                    for entity in &mut self.entity_list {
-                        entity.draw_3d(state, &mut *ctx, &mut *world).unwrap();
-                    }
+                for entity in &mut self.entity_list {
+                    entity.draw_3d(state, &mut *ctx, &mut *wrl).unwrap();
                 }
             });
-
-            /*
-            let mut draw_3d = draw.begin_mode3D(self.camera_3d);
-
-
-            draw_3d.draw_model(model, Vector3::zero(), 1.0, Color::WHITE);
-            */
         }
         {
             let mut draw_2d = draw.begin_mode2D(Camera2D {
@@ -179,6 +177,21 @@ impl World {
                 rotation: 0.0,
                 zoom: 1.0,
             });
+
+            let txt = self.texture.as_ref().unwrap();
+
+            // TO-DO fix upside down.
+            draw_2d.draw_texture_rec(
+                txt,
+                Rectangle::new(
+                    0.0,
+                    0.0,
+                    txt.texture.width as f32,
+                    -txt.texture.height as f32,
+                ),
+                Vector2::zero(),
+                Color::WHITE,
+            );
 
             unsafe {
                 let world = self as *mut Self;
