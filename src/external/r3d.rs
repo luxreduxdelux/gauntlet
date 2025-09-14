@@ -77,7 +77,7 @@ impl Handle {
     pub fn new(resolution: (i32, i32)) -> Self {
         unsafe {
             ffi::R3D_Init(resolution.0, resolution.1, 0);
-            ffi::R3D_SetTextureFilter(0);
+            //ffi::R3D_SetTextureFilter(0);
         }
 
         Self {}

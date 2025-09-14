@@ -50,6 +50,7 @@
 
 use crate::entity::implementation::*;
 use crate::state::*;
+use crate::utility::*;
 use crate::world::*;
 
 //================================================================
@@ -60,70 +61,87 @@ use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Serialize, Deserialize, Default)]
-enum TutorialKind {
-    #[default]
-    Move,
-    Jump,
-    Duck,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct Tutorial {
+#[derive(Serialize, Deserialize)]
+pub struct Lift {
     point: Vector3,
-    scale: Vector3,
-    which: TutorialKind,
+    angle: Vector3,
     #[serde(skip)]
-    collider: ColliderHandle,
+    scale: f32,
     #[serde(skip)]
     index: usize,
+    #[serde(skip)]
+    collider: ColliderHandle,
 }
 
-impl Tutorial {}
+impl Lift {}
 
 #[typetag::serde]
-impl Entity for Tutorial {
+impl Entity for Lift {
     fn get_index(&mut self) -> &mut usize {
         &mut self.index
     }
 
     fn initialize(
         &mut self,
-        _state: &mut State,
-        _context: &mut Context,
+        state: &mut State,
+        context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.physical.new_cuboid(self.scale);
+        self.collider = world.physical.new_cuboid(Vector3::new(1.0, 0.25, 1.0));
         world
             .physical
             .set_collider_point(self.collider, self.point)?;
-        world.physical.set_collider_sensor(self.collider, true)?;
+
+        state.asset.set_model(context, "data/video/lift.glb")?;
 
         Ok(())
     }
 
-    fn draw_2d(
+    fn draw_r3d(
         &mut self,
-        _state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        state: &mut State,
+        context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        let half = Vector2::new(
-            draw.get_render_width() as f32 * 0.5,
-            draw.get_render_height() as f32 * 0.5,
+        let direction = Direction::new_from_angle(&self.angle);
+        let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
+        let model = state.asset.get_model("data/video/lift.glb")?;
+
+        model.draw(&mut context.r3d, point, 1.0);
+
+        Ok(())
+    }
+
+    fn tick(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        let direction = Direction::new_from_angle(&self.angle);
+
+        let up = world.physical.cast_cuboid(
+            self.point,
+            Vector3::new(1.0, 0.5, 1.0),
+            direction.y,
+            3.0,
+            QueryFilter::default()
+                .exclude_sensors()
+                .exclude_collider(self.collider),
         );
 
-        match self.which {
-            TutorialKind::Move => {
-                draw.draw_text("foo", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Jump => {
-                draw.draw_text("bar", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Duck => {
-                draw.draw_text("baz", half.x as i32, half.y as i32, 32, Color::RED);
-            }
+        // TO-DO exclude level geometry as well.
+        if let Some((collider, _)) = up {
+            self.scale += World::TIME_STEP * 1.0;
+        } else {
+            self.scale -= World::TIME_STEP * 1.0;
         }
+
+        self.scale = self.scale.clamp(0.0, 1.0);
+
+        let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
+
+        world.physical.set_collider_point(self.collider, point)?;
 
         Ok(())
     }

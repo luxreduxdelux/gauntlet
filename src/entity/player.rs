@@ -65,8 +65,6 @@ use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use super::tina::Tina;
-
 //================================================================
 
 #[derive(Default, Serialize, Deserialize)]
@@ -147,10 +145,9 @@ impl Entity for Player {
         _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.physical.new_cuboid(Self::CUBE_SHAPE);
-        world
+        self.collider = world
             .physical
-            .set_collider_point(self.collider, self.point)?;
+            .new_cuboid_entity(self.point, Self::CUBE_SHAPE, self.index);
 
         // this has something to do with being stuck on the ground after a dash jump.
         self.character = KinematicCharacterController::default();
@@ -171,7 +168,9 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        //world.physical.draw();
+        if draw.is_key_down(KeyboardKey::KEY_TAB) {
+            world.physical.draw();
+        }
 
         //================================================================
 
@@ -260,10 +259,10 @@ impl Entity for Player {
         world: &mut World,
     ) -> anyhow::Result<()> {
         if handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) {
-            world.entity_attach(Tina {
-                point: Vector3::new(0.0, 2.0, 0.0),
-                index: 0,
-            });
+            //world.entity_attach(Tina {
+            //    point: Vector3::new(0.0, 2.0, 0.0),
+            //    index: 0,
+            //});
         }
 
         self.movement(state, handle, world)?;
@@ -474,6 +473,7 @@ impl PlayerState {
                         for x in 0..3 {
                             let ray = raylib::math::Ray::new(player.point + ray_list[x], move_z);
 
+                            // WARNING! this will sometimes cause a crash!
                             // wall-run.
                             if let Some((_, info)) = world.physical.cast_ray(
                                 ray,

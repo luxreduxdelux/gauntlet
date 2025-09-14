@@ -135,6 +135,16 @@ impl World {
         self.entity_detach.insert(*entity.get_index());
     }
 
+    pub fn entity_find(&mut self, index: usize) -> Option<&mut Box<(dyn Entity)>> {
+        for entity in &mut self.entity_list {
+            if *entity.get_index() == index {
+                return Some(entity);
+            }
+        }
+
+        None
+    }
+
     pub fn main(
         &mut self,
         state: &mut State,
@@ -164,8 +174,9 @@ impl World {
                     }
                 }
 
-                self.entity_list.extend(self.entity_attach.drain(..));
-
+                // extend the entity list with the back-buffer.
+                self.entity_list.append(&mut self.entity_attach);
+                // remove any entity in the entity detach list.
                 self.entity_list
                     .retain_mut(|entity| !self.entity_detach.contains(entity.get_index()));
 
@@ -201,8 +212,6 @@ impl World {
 
             let mut draw = draw.begin_texture_mode(&context.thread, txt);
             let mut draw_3d = draw.begin_mode3D(self.camera_3d);
-
-            draw_3d.draw_cube(Vector3::zero(), 1.0, 1.0, 1.0, Color::RED);
 
             for entity in &mut self.entity_list {
                 entity.draw_3d(state, &mut draw_3d, &mut *wrl).unwrap();

@@ -50,80 +50,107 @@
 
 use crate::entity::implementation::*;
 use crate::state::*;
+use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
-use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Serialize, Deserialize, Default)]
-enum TutorialKind {
-    #[default]
-    Move,
-    Jump,
-    Duck,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct Tutorial {
+#[derive(Serialize, Deserialize)]
+pub struct Door {
     point: Vector3,
-    scale: Vector3,
-    which: TutorialKind,
+    angle: Vector3,
     #[serde(skip)]
-    collider: ColliderHandle,
+    scale: f32,
     #[serde(skip)]
     index: usize,
 }
 
-impl Tutorial {}
+impl Door {}
 
 #[typetag::serde]
-impl Entity for Tutorial {
+impl Entity for Door {
     fn get_index(&mut self) -> &mut usize {
         &mut self.index
     }
 
     fn initialize(
         &mut self,
-        _state: &mut State,
-        _context: &mut Context,
-        world: &mut World,
+        state: &mut State,
+        context: &mut Context,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.physical.new_cuboid(self.scale);
-        world
-            .physical
-            .set_collider_point(self.collider, self.point)?;
-        world.physical.set_collider_sensor(self.collider, true)?;
+        state.asset.set_model(context, "data/video/door_a.glb")?;
+        state.asset.set_model(context, "data/video/door_b.glb")?;
 
         Ok(())
     }
 
-    fn draw_2d(
+    fn draw_r3d(
         &mut self,
-        _state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        state: &mut State,
+        context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        let half = Vector2::new(
-            draw.get_render_width() as f32 * 0.5,
-            draw.get_render_height() as f32 * 0.5,
-        );
+        let direction = Direction::new_from_angle(&self.angle);
 
-        match self.which {
-            TutorialKind::Move => {
-                draw.draw_text("foo", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Jump => {
-                draw.draw_text("bar", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Duck => {
-                draw.draw_text("baz", half.x as i32, half.y as i32, 32, Color::RED);
-            }
+        let point_a = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.00;
+        let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.25;
+
+        let model_a = state.asset.get_model("data/video/door_a.glb")?;
+
+        model_a.draw(&mut context.r3d, point_a, 1.0);
+
+        let model_b = state.asset.get_model("data/video/door_b.glb")?;
+
+        model_b.draw(&mut context.r3d, point_b, 1.0);
+
+        Ok(())
+    }
+
+    fn tick(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        // cast square in front of door, if player is in front of it, open, otherwise, close.
+
+        let direction = Direction::new_from_angle(&self.angle);
+
+        let fwd = world
+            .physical
+            .cast_cuboid(
+                self.point,
+                Vector3::new(0.75, 0.5, 0.75),
+                direction.x,
+                3.0,
+                rapier3d::prelude::QueryFilter::default().exclude_sensors(),
+            )
+            .is_some();
+        let bck = world
+            .physical
+            .cast_cuboid(
+                self.point,
+                Vector3::new(0.75, 0.5, 0.75),
+                -direction.x,
+                3.0,
+                rapier3d::prelude::QueryFilter::default().exclude_sensors(),
+            )
+            .is_some();
+
+        // TO-DO exclude level geometry as well.
+        if fwd || bck {
+            self.scale += World::TIME_STEP * 3.0;
+        } else {
+            self.scale -= World::TIME_STEP * 3.0;
         }
+
+        self.scale = self.scale.clamp(0.0, 1.0);
 
         Ok(())
     }

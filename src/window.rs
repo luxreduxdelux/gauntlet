@@ -566,7 +566,7 @@ impl Layout {
             &mut state.window,
             &mut draw,
             state.world.is_some(),
-            "pwrmttl.",
+            "pwrmttl",
             header,
         )?;
 

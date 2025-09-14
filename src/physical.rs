@@ -54,6 +54,7 @@ use crate::world::*;
 
 use rapier3d::{
     control::{EffectiveCharacterMovement, KinematicCharacterController},
+    parry::query::{QueryDispatcher, ShapeCastOptions},
     prelude::*,
 };
 use raylib::prelude::*;
@@ -74,7 +75,6 @@ pub struct Physical {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    query_pipeline: QueryPipeline,
     debug_render_pipeline: DebugRenderPipeline,
     pub collision_handler: CollisionHandler,
 }
@@ -118,13 +118,45 @@ impl Physical {
             vector![ray.direction.x, ray.direction.y, ray.direction.z],
         );
 
-        self.query_pipeline.cast_ray_and_get_normal(
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
             &self.rigid_body_set,
             &self.collider_set,
-            &ray,
-            distance,
-            solid,
             filter,
+        );
+
+        query_pipeline.cast_ray_and_get_normal(&ray, distance, solid)
+    }
+
+    pub fn cast_cuboid(
+        &self,
+        point: Vector3,
+        shape: Vector3,
+        speed: Vector3,
+        distance: f32,
+        filter: QueryFilter,
+    ) -> Option<(ColliderHandle, ShapeCastHit)> {
+        let point = Isometry::new(vector![point.x, point.y, point.z], vector![0.0, 0.0, 0.0]);
+        let shape = Cuboid::new(vector![shape.x, shape.y, shape.z]);
+        let speed = vector![speed.x, speed.y, speed.z];
+
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.rigid_body_set,
+            &self.collider_set,
+            filter,
+        );
+
+        query_pipeline.cast_shape(
+            &point,
+            &speed,
+            &shape,
+            ShapeCastOptions {
+                max_time_of_impact: distance,
+                target_distance: 0.0,
+                stop_at_penetration: false,
+                compute_impact_geometry_on_penetration: false,
+            },
         )
     }
 
@@ -137,17 +169,21 @@ impl Physical {
         let wish_speed = vector![speed.x, speed.y, speed.z] * World::TIME_STEP;
         let collider = self.get_collider(collider_handle)?;
 
-        let movement = character.move_shape(
-            World::TIME_STEP,
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
             &self.rigid_body_set,
             &self.collider_set,
-            &self.query_pipeline,
-            collider.shape(),
-            collider.position(),
-            wish_speed,
             QueryFilter::default()
                 .exclude_collider(collider_handle)
                 .exclude_sensors(),
+        );
+
+        let movement = character.move_shape(
+            World::TIME_STEP,
+            &query_pipeline,
+            collider.shape(),
+            collider.position(),
+            wish_speed,
             |_| {},
         );
 
@@ -159,10 +195,26 @@ impl Physical {
         Ok(movement)
     }
 
+    pub fn new_cuboid_entity(
+        &mut self,
+        point: Vector3,
+        shape: Vector3,
+        index: usize,
+    ) -> ColliderHandle {
+        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
+            .translation(vector![point.x, point.y, point.z])
+            .user_data(index as u128)
+            //.active_events(ActiveEvents::COLLISION_EVENTS)
+            //.active_collision_types(ActiveCollisionTypes::all())
+            .build();
+
+        self.collider_set.insert(collider)
+    }
+
     pub fn new_cuboid(&mut self, shape: Vector3) -> ColliderHandle {
         let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
-            .active_events(ActiveEvents::COLLISION_EVENTS)
-            .active_collision_types(ActiveCollisionTypes::all())
+            //.active_events(ActiveEvents::COLLISION_EVENTS)
+            //.active_collision_types(ActiveCollisionTypes::all())
             .build();
 
         self.collider_set.insert(collider)
@@ -218,9 +270,9 @@ impl Physical {
     }
 
     pub fn tick(&mut self) {
-        if let Ok(lock) = &mut self.collision_handler.collision_list.lock() {
-            lock.clear();
-        }
+        //if let Ok(lock) = &mut self.collision_handler.collision_list.lock() {
+        //    lock.clear();
+        //}
 
         self.physics_pipeline.step(
             &vector![0.0, -9.81, 0.0],
@@ -233,9 +285,9 @@ impl Physical {
             &mut self.impulse_joint_set,
             &mut self.multibody_joint_set,
             &mut self.ccd_solver,
-            Some(&mut self.query_pipeline),
             &(),
-            &self.collision_handler,
+            &(),
+            //&self.collision_handler,
         );
     }
 }

@@ -48,6 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// TO-DO move asset into world, or at least make F2 reload each asset.
+// TO-DO clean up ray/shape casting for entity API
+
 mod asset;
 mod entity;
 mod external;
@@ -66,6 +69,10 @@ use crate::state::*;
 //================================================================
 
 fn main() -> anyhow::Result<()> {
+    unsafe {
+        std::env::set_var("RUST_BACKTRACE", "1");
+    }
+
     let mut context = Context::new()?;
     let mut state = State::default();
 

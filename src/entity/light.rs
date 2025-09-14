@@ -54,8 +54,12 @@ use crate::state::*;
 use crate::utility::*;
 use crate::world::*;
 
+//================================================================
+
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
+
+//================================================================
 
 #[derive(Serialize, Deserialize)]
 pub struct Light {
@@ -90,7 +94,7 @@ impl Entity for Light {
 
         let direction = Direction::new_from_angle(&self.angle);
 
-        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 16.0);
+        //light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 16.0);
         light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
         light.enable_shadow(512);
         light.look_at(self.point, self.point + direction.x);

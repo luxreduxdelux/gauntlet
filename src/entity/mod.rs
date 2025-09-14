@@ -48,7 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+pub mod door;
 pub mod implementation;
+pub mod lift;
 pub mod light;
 pub mod path;
 pub mod player;
