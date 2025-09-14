@@ -71,16 +71,22 @@ pub struct Tutorial {
     which: TutorialKind,
     #[serde(skip)]
     collider: ColliderHandle,
+    #[serde(skip)]
+    index: usize,
 }
 
 impl Tutorial {}
 
 #[typetag::serde]
 impl Entity for Tutorial {
+    fn get_index(&mut self) -> &mut usize {
+        &mut self.index
+    }
+
     fn initialize(
         &mut self,
-        state: &mut State,
-        context: &mut Context,
+        _state: &mut State,
+        _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.collider = world.physical.new_cuboid(self.scale);
@@ -94,7 +100,7 @@ impl Entity for Tutorial {
 
     fn draw_2d(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
@@ -102,8 +108,6 @@ impl Entity for Tutorial {
             draw.get_render_width() as f32 * 0.5,
             draw.get_render_height() as f32 * 0.5,
         );
-
-        return Ok(());
 
         match self.which {
             TutorialKind::Move => {

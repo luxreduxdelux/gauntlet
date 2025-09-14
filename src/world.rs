@@ -49,6 +49,7 @@
 */
 
 use crate::entity::implementation::*;
+use crate::entity::path::*;
 use crate::physical::*;
 use crate::scene::*;
 use crate::state::*;
@@ -57,6 +58,7 @@ use crate::state::*;
 
 use raylib::prelude::*;
 use serde::Deserialize;
+use std::collections::HashSet;
 
 //================================================================
 
@@ -65,10 +67,20 @@ pub struct World {
     pub level: String,
     pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip)]
+    entity_index: usize,
+    #[serde(skip)]
+    entity_attach: Vec<Box<dyn Entity>>,
+    #[serde(skip)]
+    entity_detach: HashSet<usize>,
+    #[serde(skip)]
+    pub node_list: Vec<Path>,
+    #[serde(skip)]
     pub scene: Option<Scene>,
+    // move this into scene.
     #[serde(skip, default = "World::default_camera")]
     pub camera_3d: Camera3D,
     #[serde(skip)]
+    // move this into scene.
     pub camera_2d: Camera2D,
     #[serde(skip)]
     pub physical: Physical,
@@ -81,7 +93,7 @@ pub struct World {
 }
 
 impl World {
-    pub const TIME_STEP: f32 = 1.0 / 144.0;
+    pub const TIME_STEP: f32 = 1.0 / 60.0;
 
     pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
         let file = std::fs::read_to_string(path)?;
@@ -104,11 +116,23 @@ impl World {
             let world = &mut file as *mut Self;
 
             for entity in &mut file.entity_list {
+                entity.set_index(file.entity_index);
+                file.entity_index += 1;
                 entity.initialize(state, context, &mut *world)?;
             }
         }
 
         Ok(file)
+    }
+
+    pub fn entity_attach<T: Entity>(&mut self, mut entity: T) {
+        entity.set_index(self.entity_index);
+        self.entity_index += 1;
+        self.entity_attach.push(Box::new(entity));
+    }
+
+    pub fn entity_detach<T: Entity>(&mut self, entity: &mut T) {
+        self.entity_detach.insert(*entity.get_index());
     }
 
     pub fn main(
@@ -140,6 +164,11 @@ impl World {
                     }
                 }
 
+                self.entity_list.extend(self.entity_attach.drain(..));
+
+                self.entity_list
+                    .retain_mut(|entity| !self.entity_detach.contains(entity.get_index()));
+
                 self.time += Self::TIME_STEP;
                 self.step -= Self::TIME_STEP;
             }
@@ -166,9 +195,26 @@ impl World {
                 model.draw(r3d, Vector3::zero(), 1.0);
 
                 for entity in &mut self.entity_list {
-                    entity.draw_3d(state, &mut *ctx, &mut *wrl).unwrap();
+                    entity.draw_r3d(state, &mut *ctx, &mut *wrl).unwrap();
                 }
             });
+
+            let mut draw = draw.begin_texture_mode(&context.thread, txt);
+            let mut draw_3d = draw.begin_mode3D(self.camera_3d);
+
+            draw_3d.draw_cube(Vector3::zero(), 1.0, 1.0, 1.0, Color::RED);
+
+            for entity in &mut self.entity_list {
+                entity.draw_3d(state, &mut draw_3d, &mut *wrl).unwrap();
+            }
+
+            for node in &self.node_list {
+                draw_3d.draw_cube(node.point, 0.25, 0.25, 0.25, Color::RED);
+
+                if let Some(next_item) = &node.next_item {
+                    draw_3d.draw_line_3D(node.point, next_item.point, Color::GREEN);
+                }
+            }
         }
         {
             let mut draw_2d = draw.begin_mode2D(Camera2D {

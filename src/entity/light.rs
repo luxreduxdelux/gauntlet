@@ -65,12 +65,18 @@ pub struct Light {
     color: Color,
     #[serde(skip)]
     handle: Option<crate::external::r3d::Light>,
+    #[serde(skip)]
+    index: usize,
 }
 
 impl Light {}
 
 #[typetag::serde]
 impl Entity for Light {
+    fn get_index(&mut self) -> &mut usize {
+        &mut self.index
+    }
+
     fn initialize(
         &mut self,
         _state: &mut State,

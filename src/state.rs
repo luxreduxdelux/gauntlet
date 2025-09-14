@@ -70,7 +70,7 @@ impl Context {
         let (mut handle, thread) = raylib::init()
             .size(1024, 768)
             .resizable()
-            .title("pwrmttl.")
+            .title("pwrmttl")
             .build();
 
         handle.set_exit_key(None);

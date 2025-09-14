@@ -63,19 +63,37 @@ use raylib::prelude::*;
 pub trait Entity: Any {
     fn initialize(
         &mut self,
-        state: &mut State,
-        context: &mut Context,
-        world: &mut World,
+        _state: &mut State,
+        _context: &mut Context,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
     //================================================================
 
-    fn draw_3d(
+    fn get_index(&mut self) -> &mut usize;
+
+    //================================================================
+
+    fn set_index(&mut self, index: usize) {
+        *self.get_index() = index;
+    }
+
+    //================================================================
+
+    fn draw_r3d(
         &mut self,
         _state: &mut State,
         _context: &mut Context,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn draw_3d(
+        &mut self,
+        _state: &mut State,
+        _draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())

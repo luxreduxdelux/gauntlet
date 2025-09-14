@@ -53,7 +53,6 @@
 // fix attaching to wall after jump off wall run
 
 use crate::entity::implementation::*;
-use crate::external::r3d;
 use crate::state::*;
 use crate::user::*;
 use crate::utility::*;
@@ -65,6 +64,8 @@ use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
+
+use super::tina::Tina;
 
 //================================================================
 
@@ -90,6 +91,8 @@ pub struct Player {
     clash: bool,
     #[serde(skip)]
     shake: f32,
+    #[serde(skip)]
+    index: usize,
 }
 
 impl Player {
@@ -134,10 +137,14 @@ impl Player {
 
 #[typetag::serde]
 impl Entity for Player {
+    fn get_index(&mut self) -> &mut usize {
+        &mut self.index
+    }
+
     fn initialize(
         &mut self,
         state: &mut State,
-        context: &mut Context,
+        _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.collider = world.physical.new_cuboid(Self::CUBE_SHAPE);
@@ -161,25 +168,25 @@ impl Entity for Player {
     fn draw_3d(
         &mut self,
         state: &mut State,
-        context: &mut Context,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        world.physical.draw();
+        //world.physical.draw();
 
         //================================================================
 
-        state.user.move_x_a.poll(&context.handle);
-        state.user.move_x_b.poll(&context.handle);
-        state.user.move_z_a.poll(&context.handle);
-        state.user.move_z_b.poll(&context.handle);
-        state.user.jump.poll(&context.handle);
-        state.user.duck.poll(&context.handle);
-        state.user.fire_a.poll(&context.handle);
-        state.user.fire_b.poll(&context.handle);
+        state.user.move_x_a.poll(&draw);
+        state.user.move_x_b.poll(&draw);
+        state.user.move_z_a.poll(&draw);
+        state.user.move_z_b.poll(&draw);
+        state.user.jump.poll(&draw);
+        state.user.duck.poll(&draw);
+        state.user.fire_a.poll(&draw);
+        state.user.fire_b.poll(&draw);
 
         //================================================================
 
-        let mouse = &context.handle.get_mouse_delta();
+        let mouse = &draw.get_mouse_delta();
 
         self.angle.x -= mouse.x * 0.1 * state.user.mouse_speed;
         self.angle.y += mouse.y * 0.1 * state.user.mouse_speed;
@@ -203,10 +210,8 @@ impl Entity for Player {
             }
         };
 
-        self.view.blend(
-            &context.handle,
-            &PlayerState::view(self, state, &context.handle),
-        );
+        self.view
+            .blend(&draw, &PlayerState::view(self, state, &draw));
 
         let direction =
             Direction::new_from_angle(&(self.angle + Vector3::new(0.0, 0.0, self.view.angle.z)));
@@ -254,6 +259,13 @@ impl Entity for Player {
         handle: &mut RaylibHandle,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        if handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) {
+            world.entity_attach(Tina {
+                point: Vector3::new(0.0, 2.0, 0.0),
+                index: 0,
+            });
+        }
+
         self.movement(state, handle, world)?;
 
         state.user.move_x_a.wipe();

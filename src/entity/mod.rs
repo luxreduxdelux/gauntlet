@@ -50,6 +50,7 @@
 
 pub mod implementation;
 pub mod light;
+pub mod path;
 pub mod player;
 pub mod tina;
 pub mod tutorial;

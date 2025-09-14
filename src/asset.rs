@@ -60,7 +60,9 @@ use std::collections::HashMap;
 #[derive(Default)]
 pub struct Asset<'a> {
     model: HashMap<String, crate::external::r3d::Model>,
+    texture: HashMap<String, Texture2D>,
     sound: HashMap<String, Sound<'a>>,
+    music: HashMap<String, Music<'a>>,
     font: HashMap<String, Font>,
 }
 
@@ -70,7 +72,10 @@ impl<'a> Asset<'a> {
         context: &mut Context,
         name: &str,
     ) -> anyhow::Result<&mut crate::external::r3d::Model> {
-        //let mut model = context.r3d.load_model(&context.thread, name)?;
+        if self.has_model(name) {
+            return self.get_model(name);
+        }
+
         let model = crate::external::r3d::Model::new(&mut context.r3d, name);
 
         /*
@@ -99,7 +104,15 @@ impl<'a> Asset<'a> {
         )))
     }
 
+    pub fn has_model(&self, name: &str) -> bool {
+        self.model.contains_key(name)
+    }
+
     pub fn set_sound(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Sound<'a>> {
+        if self.has_sound(name) {
+            return self.get_sound(name);
+        }
+
         let sound = context.audio.new_sound(name)?;
 
         self.sound.insert(name.to_string(), sound);
@@ -113,12 +126,20 @@ impl<'a> Asset<'a> {
         )))
     }
 
+    pub fn has_sound(&self, name: &str) -> bool {
+        self.sound.contains_key(name)
+    }
+
     pub fn set_font(
         &mut self,
         context: &mut Context,
         name: &str,
         size: i32,
     ) -> anyhow::Result<&Font> {
+        if self.has_font(name) {
+            return self.get_font(name);
+        }
+
         let font = context
             .handle
             .load_font_ex(&context.thread, name, size, None)?;
@@ -132,6 +153,10 @@ impl<'a> Asset<'a> {
         self.font.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_font(): Could not find asset \"{name}\"."
         )))
+    }
+
+    pub fn has_font(&self, name: &str) -> bool {
+        self.font.contains_key(name)
     }
 }
 

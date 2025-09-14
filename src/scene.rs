@@ -2,7 +2,6 @@ use std::collections::HashMap;
 
 use crate::external::r3d::*;
 use crate::state::*;
-use raylib::prelude::*;
 
 pub struct Scene {
     light: HashMap<u32, Light>,
@@ -10,7 +9,7 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new(context: &mut Context) -> Self {
+    pub fn new(_context: &mut Context) -> Self {
         let mut scene = Self {
             light: HashMap::default(),
             light_index: u32::default(),

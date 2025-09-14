@@ -55,61 +55,57 @@ use crate::world::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
-pub struct Tina {
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Path {
     pub point: Vector3,
+    name: String,
+    next_node: Option<String>,
     #[serde(skip)]
-    pub index: usize,
+    pub next_item: Option<Box<Path>>,
+    #[serde(skip)]
+    index: usize,
 }
 
-impl Tina {}
+impl Path {}
 
 #[typetag::serde]
-impl Entity for Tina {
+impl Entity for Path {
     fn get_index(&mut self) -> &mut usize {
         &mut self.index
     }
 
     fn initialize(
         &mut self,
-        state: &mut State,
-        context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        state.asset.set_model(context, "data/video/tina.glb")?;
-
-        Ok(())
-    }
-
-    fn tick(
-        &mut self,
         _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
+        context: &mut Context,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        if _handle.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT) {
-            _world.entity_detach(self);
+        // if we have another node to find...
+        if let Some(next_node) = &self.next_node {
+            // for each entity in the entity list...
+            for entity in &world.entity_list {
+                // if the entity is a path and their name is the same as our next node, assign it to us.
+                if let Some(path) = entity.as_any().downcast_ref::<Self>()
+                    && path.name == *next_node
+                {
+                    self.next_item = Some(Box::new(path.clone()))
+                }
+            }
         }
 
+        world.node_list.push(self.clone());
+
+        // TO-DO entity deletion mechanism here.
+
         Ok(())
     }
 
-    fn draw_r3d(
+    fn draw_3d(
         &mut self,
         state: &mut State,
-        context: &mut Context,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        let model = state.asset.get_model("data/video/tina.glb")?;
-
-        let point = (context.handle.get_time() as f32 * 3.0).sin() * 4.0;
-
-        model.draw(
-            &mut context.r3d,
-            self.point + Vector3::new(0.0, point.max(0.0), 0.0),
-            0.5,
-        );
-
         Ok(())
     }
 }
