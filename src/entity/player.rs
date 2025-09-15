@@ -217,17 +217,17 @@ impl Entity for Player {
         let point = self.point + shake + self.view.point;
         let focus = point + Vector3::new(self.view.angle.x, self.view.angle.y, 0.0) + direction.x;
 
-        world.camera_3d.position = point;
-        world.camera_3d.target = focus;
-        world.camera_3d.up = direction.y;
-        world.camera_3d.fovy = self.view.scale;
+        world.scene.camera_3d.position = point;
+        world.scene.camera_3d.target = focus;
+        world.scene.camera_3d.up = direction.y;
+        world.scene.camera_3d.fovy = self.view.scale;
 
         Ok(())
     }
 
     fn draw_2d(
         &mut self,
-        _state: &mut State,
+        state: &mut State,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {

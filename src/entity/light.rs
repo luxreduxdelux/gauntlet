@@ -91,15 +91,28 @@ impl Entity for Light {
 
         light.set_active(true);
         light.set_color(self.color);
+        light.set_specular(0.0);
 
         let direction = Direction::new_from_angle(&self.angle);
 
-        //light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 16.0);
+        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 4.0);
         light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
-        light.enable_shadow(512);
+        light.enable_shadow(256);
         light.look_at(self.point, self.point + direction.x);
 
         self.handle = Some(light);
+
+        Ok(())
+    }
+    fn tick(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        if let Some(handle) = &mut self.handle {
+            handle.update_shadow_map();
+        }
 
         Ok(())
     }

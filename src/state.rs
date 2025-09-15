@@ -171,13 +171,6 @@ impl<'a> State<'a> {
                     self.new_game(context)?;
                 }
 
-                if (*ctx).handle.is_window_resized() {
-                    context.r3d.update_resolution((
-                        context.handle.get_screen_width() / 3,
-                        context.handle.get_screen_height() / 3,
-                    ));
-                }
-
                 let mut draw = context.handle.begin_drawing(&context.thread);
 
                 draw.clear_background(Color::WHITE);

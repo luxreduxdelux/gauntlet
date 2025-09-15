@@ -61,6 +61,7 @@ use std::collections::HashMap;
 pub struct Asset<'a> {
     model: HashMap<String, crate::external::r3d::Model>,
     texture: HashMap<String, Texture2D>,
+    shader: HashMap<String, Shader>,
     sound: HashMap<String, Sound<'a>>,
     music: HashMap<String, Music<'a>>,
     font: HashMap<String, Font>,
@@ -106,6 +107,36 @@ impl<'a> Asset<'a> {
 
     pub fn has_model(&self, name: &str) -> bool {
         self.model.contains_key(name)
+    }
+
+    pub fn set_shader(
+        &mut self,
+        context: &mut Context,
+        name: &str,
+        vs_path: Option<&str>,
+        fs_path: Option<&str>,
+    ) -> anyhow::Result<&mut Shader> {
+        if self.has_shader(name) {
+            return self.get_shader(name);
+        }
+
+        let shader = context
+            .handle
+            .load_shader(&context.thread, vs_path, fs_path);
+
+        self.shader.insert(name.to_string(), shader);
+
+        self.get_shader(name)
+    }
+
+    pub fn get_shader(&mut self, name: &str) -> anyhow::Result<&mut Shader> {
+        self.shader.get_mut(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_shader(): Could not find asset \"{name}\"."
+        )))
+    }
+
+    pub fn has_shader(&self, name: &str) -> bool {
+        self.shader.contains_key(name)
     }
 
     pub fn set_sound(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Sound<'a>> {

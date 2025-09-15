@@ -5,6 +5,7 @@
 
 use std::ffi::CString;
 
+use ffi::R3D_ShadowUpdateMode;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -77,7 +78,7 @@ impl Handle {
     pub fn new(resolution: (i32, i32)) -> Self {
         unsafe {
             ffi::R3D_Init(resolution.0, resolution.1, 0);
-            //ffi::R3D_SetTextureFilter(0);
+            ffi::R3D_SetTextureFilter(0);
         }
 
         Self {}
@@ -183,12 +184,12 @@ pub enum LightType {
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShadowUpdateMode {
     #[default]
+    /// Shadow maps update every frame for real-time accuracy.
+    Manual,
     /// Shadow maps update only when explicitly requested.
     Interval,
     /// Shadow maps update at defined time intervals.
     Continuous,
-    /// Shadow maps update every frame for real-time accuracy.
-    Manual,
 }
 
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -391,9 +392,9 @@ impl Light {
     pub fn get_shadow_update_mode(&self) -> ShadowUpdateMode {
         unsafe {
             match ffi::R3D_GetShadowUpdateMode(self.inner) {
-                0 => ShadowUpdateMode::Interval,
-                1 => ShadowUpdateMode::Continuous,
-                _ => ShadowUpdateMode::Manual,
+                0 => ShadowUpdateMode::Manual,
+                1 => ShadowUpdateMode::Interval,
+                _ => ShadowUpdateMode::Continuous,
             }
         }
     }

@@ -26,6 +26,8 @@ fn main() {
         .define("R3D_RAYLIB_VENDORED", "1")
         // use built-in assimp sub-module.
         .define("R3D_ASSIMP_VENDORED", "1")
+        .define("CMAKE_BUILD_TYPE", "Release")
+        .cxxflag("-O3")
         .build();
 
     // research if we can use static instead of dylib?

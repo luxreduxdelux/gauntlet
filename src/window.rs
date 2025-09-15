@@ -185,7 +185,7 @@ impl<'a> Window<'a> {
         ))
     }
 
-    fn draw<
+    pub fn draw<
         T: FnMut(&mut Self, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
     >(
         &mut self,
@@ -253,7 +253,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    fn button(
+    pub fn button(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
@@ -312,7 +312,7 @@ impl<'a> Window<'a> {
         Ok(response)
     }
 
-    fn slider(
+    pub fn slider(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,

@@ -75,21 +75,13 @@ pub struct World {
     #[serde(skip)]
     pub node_list: Vec<Path>,
     #[serde(skip)]
-    pub scene: Option<Scene>,
-    // move this into scene.
-    #[serde(skip, default = "World::default_camera")]
-    pub camera_3d: Camera3D,
-    #[serde(skip)]
-    // move this into scene.
-    pub camera_2d: Camera2D,
+    pub scene: Scene,
     #[serde(skip)]
     pub physical: Physical,
     #[serde(skip)]
     pub time: f32,
     #[serde(skip)]
     step: f32,
-    #[serde(skip)]
-    texture: Option<RenderTexture2D>,
 }
 
 impl World {
@@ -99,18 +91,19 @@ impl World {
         let file = std::fs::read_to_string(path)?;
         let mut file: Self = serde_json::from_str(&file)?;
 
+        file.scene.initialize(context)?;
+
         let model = state
             .asset
             .set_model(context, &format!("data/level/{}", file.level))?;
         file.physical.new_model(model)?;
 
-        file.scene = Some(Scene::new(context));
-
-        file.texture = Some(
-            context
-                .handle
-                .load_render_texture(&context.thread, 1024, 768)?,
-        );
+        state.asset.set_shader(
+            context,
+            "screen",
+            Some("data/shader/base.vs"),
+            Some("data/shader/screen.fs"),
+        )?;
 
         unsafe {
             let world = &mut file as *mut Self;
@@ -151,6 +144,8 @@ impl World {
         draw: &mut RaylibDrawHandle<'_>,
         context: &mut Context,
     ) -> anyhow::Result<()> {
+        let world = self as *mut Self;
+
         if state.layout.is_none() {
             let frame_time = context.handle.get_frame_time().min(0.25);
 
@@ -167,8 +162,6 @@ impl World {
                 }
 
                 unsafe {
-                    let world = self as *mut Self;
-
                     for entity in &mut self.entity_list {
                         entity.tick(state, &mut context.handle, &mut *world)?;
                     }
@@ -186,75 +179,54 @@ impl World {
         }
 
         unsafe {
-            let world = self as *mut Self;
-
             for entity in &mut self.entity_list {
                 entity.main(state, draw, &mut *world)?;
             }
         }
-        unsafe {
-            let wrl = self as *mut Self;
-            let ctx = context as *mut Context;
-            let txt = (*wrl).texture.as_mut().unwrap();
 
-            context.r3d.render_ex(self.camera_3d, txt, |r3d| {
+        unsafe {
+            let context = context as *mut Context;
+
+            self.scene.draw_r3d(&mut *context, |draw| {
                 let model = state
                     .asset
                     .get_model(&format!("data/level/{}", self.level))
                     .unwrap();
 
-                model.draw(r3d, Vector3::zero(), 1.0);
+                model.draw(draw, Vector3::zero(), 1.0);
 
                 for entity in &mut self.entity_list {
-                    entity.draw_r3d(state, &mut *ctx, &mut *wrl).unwrap();
+                    entity.draw_r3d(state, &mut *context, &mut *world).unwrap();
                 }
-            });
 
-            let mut draw = draw.begin_texture_mode(&context.thread, txt);
-            let mut draw_3d = draw.begin_mode3D(self.camera_3d);
+                Ok(())
+            })?;
 
-            for entity in &mut self.entity_list {
-                entity.draw_3d(state, &mut draw_3d, &mut *wrl).unwrap();
-            }
-
-            for node in &self.node_list {
-                draw_3d.draw_cube(node.point, 0.25, 0.25, 0.25, Color::RED);
-
-                if let Some(next_item) = &node.next_item {
-                    draw_3d.draw_line_3D(node.point, next_item.point, Color::GREEN);
+            self.scene.draw_3d(&mut *context, draw, |draw| {
+                for entity in &mut self.entity_list {
+                    entity.draw_3d(state, draw, &mut *world).unwrap();
                 }
-            }
+
+                for node in &self.node_list {
+                    draw.draw_cube(node.point, 0.25, 0.25, 0.25, Color::RED);
+
+                    if let Some(next_item) = &node.next_item {
+                        draw.draw_line_3D(node.point, next_item.point, Color::GREEN);
+                    }
+                }
+
+                Ok(())
+            })?;
         }
-        {
-            let mut draw_2d = draw.begin_mode2D(Camera2D {
-                offset: Vector2::zero(),
-                target: Vector2::zero(),
-                rotation: 0.0,
-                zoom: 1.0,
-            });
 
-            let txt = self.texture.as_ref().unwrap();
-
-            // TO-DO fix upside down.
-            draw_2d.draw_texture_rec(
-                txt,
-                Rectangle::new(
-                    0.0,
-                    0.0,
-                    txt.texture.width as f32,
-                    -txt.texture.height as f32,
-                ),
-                Vector2::zero(),
-                Color::WHITE,
-            );
-
-            unsafe {
-                let world = self as *mut Self;
-
+        unsafe {
+            self.scene.draw_2d(&mut *context, draw, |draw| {
                 for entity in &mut self.entity_list {
-                    entity.draw_2d(state, &mut draw_2d, &mut *world)?;
+                    entity.draw_2d(state, draw, &mut *world)?;
                 }
-            }
+
+                Ok(())
+            })?;
         }
 
         Ok(())
