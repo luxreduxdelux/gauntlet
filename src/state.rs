@@ -101,8 +101,7 @@ impl Context {
 #[derive(Default)]
 pub struct State<'a> {
     pub close: bool,
-    pub world: Option<World>,
-    pub asset: Asset<'a>,
+    pub world: Option<World<'a>>,
     pub window: Window<'a>,
     pub layout: Option<Layout>,
     pub user: User,
@@ -137,8 +136,6 @@ impl<'a> State<'a> {
                 .set_description(e)
                 .show();
         });
-
-        panic!("{text}");
     }
 
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {

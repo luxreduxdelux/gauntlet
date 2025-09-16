@@ -98,6 +98,7 @@ impl Player {
     const ANGLE_MAX: f32 = 90.0;
     const CUBE_SHAPE: Vector3 = Vector3::new(0.25, 0.5, 0.25);
 
+    // flatten this function into tick. doesn't need to be its own function.
     fn movement(
         &mut self,
         state: &mut State,
@@ -139,12 +140,23 @@ impl Entity for Player {
         &mut self.index
     }
 
-    fn initialize(
+    fn initialize<'a>(
         &mut self,
         state: &mut State,
-        _context: &mut Context,
-        world: &mut World,
+        context: &'a mut Context,
+        world: &mut World<'a>,
     ) -> anyhow::Result<()> {
+        world
+            .scene
+            .asset
+            .set_music(context, "data/audio/test.mp3")?;
+        world
+            .scene
+            .asset
+            .set_sound(context, "data/audio/donut.wav", 8)?;
+
+        world.scene.play_music("data/audio/test.mp3", None)?;
+
         self.collider = world
             .physical
             .new_cuboid_entity(self.point, Self::CUBE_SHAPE, self.index);
@@ -171,6 +183,12 @@ impl Entity for Player {
         if draw.is_key_down(KeyboardKey::KEY_TAB) {
             world.physical.draw();
         }
+
+        if draw.is_key_pressed(KeyboardKey::KEY_Q) {
+            world.scene.play_sound("data/audio/donut.wav", None)?;
+        }
+
+        draw.draw_cube(Vector3::new(0.0, 2.0, 0.0), 0.25, 0.25, 0.25, Color::RED);
 
         //================================================================
 

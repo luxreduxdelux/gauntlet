@@ -53,6 +53,7 @@
 // cube should also animate, rotating like a rubik's cube
 
 use crate::asset::*;
+use crate::scene::*;
 use crate::state::*;
 use crate::user::*;
 use crate::utility::*;
@@ -92,7 +93,7 @@ impl Response {
 #[derive(Default)]
 pub struct Window<'a> {
     widget: HashMap<String, Widget>,
-    asset: Asset<'a>,
+    scene: Scene<'a>,
     point: Vector2,
     mouse: Vector2,
     focus: Option<String>,
@@ -104,13 +105,21 @@ impl<'a> Window<'a> {
     const FONT_SPACE: f32 = 1.0;
 
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
-        self.asset
+        self.scene
+            .asset
             .set_font(context, "data/video/font_label.ttf", 32)?;
-        self.asset
+        self.scene
+            .asset
             .set_font(context, "data/video/font_title.ttf", 56)?;
-        self.asset.set_sound(context, "data/audio/hover.ogg")?;
-        self.asset.set_sound(context, "data/audio/click.ogg")?;
-        self.asset.set_sound(context, "data/audio/back.ogg")?;
+        self.scene
+            .asset
+            .set_sound(context, "data/audio/hover.ogg", 0)?;
+        self.scene
+            .asset
+            .set_sound(context, "data/audio/click.ogg", 0)?;
+        self.scene
+            .asset
+            .set_sound(context, "data/audio/back.ogg", 0)?;
 
         Ok(())
     }
@@ -131,11 +140,11 @@ impl<'a> Window<'a> {
     fn close(&mut self) {}
 
     fn font_label(&self) -> anyhow::Result<&Font> {
-        self.asset.get_font("data/video/font_label.ttf")
+        self.scene.asset.get_font("data/video/font_label.ttf")
     }
 
     fn font_title(&self) -> anyhow::Result<&Font> {
-        self.asset.get_font("data/video/font_title.ttf")
+        self.scene.asset.get_font("data/video/font_title.ttf")
     }
 
     fn response(
@@ -166,7 +175,11 @@ impl<'a> Window<'a> {
             entry.delta += frame * 8.0;
 
             if !entry.hover {
-                self.asset.get_sound("data/audio/hover.ogg")?.play();
+                self.scene
+                    .asset
+                    .get_sound("data/audio/hover.ogg")?
+                    .sound
+                    .play();
 
                 entry.hover = true;
             }
@@ -265,7 +278,11 @@ impl<'a> Window<'a> {
         )?;
 
         if response.press {
-            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.scene
+                .asset
+                .get_sound("data/audio/click.ogg")?
+                .sound
+                .play();
         }
 
         self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
@@ -303,7 +320,11 @@ impl<'a> Window<'a> {
         )?;
 
         if response.press {
-            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.scene
+                .asset
+                .get_sound("data/audio/click.ogg")?
+                .sound
+                .play();
             *value = !*value;
         }
 
@@ -347,7 +368,11 @@ impl<'a> Window<'a> {
         )?;
 
         if response.press {
-            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.scene
+                .asset
+                .get_sound("data/audio/click.ogg")?
+                .sound
+                .play();
             self.focus = Some(text.to_string());
         }
 
@@ -426,7 +451,11 @@ impl<'a> Window<'a> {
         }
 
         if response.press {
-            self.asset.get_sound("data/audio/click.ogg")?.play();
+            self.scene
+                .asset
+                .get_sound("data/audio/click.ogg")?
+                .sound
+                .play();
             self.focus = Some(text.to_string());
         }
 
@@ -465,6 +494,16 @@ impl Layout {
         // right-click should return to the last menu.
         // improve slider widget.
         // add scroll widget?
+
+        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+            if let Some(world) = &mut state.world {
+                if world.scene.pause {
+                    world.scene.resume()?;
+                } else {
+                    world.scene.pause()?;
+                }
+            }
+        }
 
         if let Some(layout) = &mut state.layout {
             match layout {
@@ -595,7 +634,13 @@ impl Layout {
             }
 
             Self::change_layout(state, layout);
-            state.window.asset.get_sound("data/audio/back.ogg")?.play();
+            state
+                .window
+                .scene
+                .asset
+                .get_sound("data/audio/back.ogg")?
+                .sound
+                .play();
         }
 
         Ok(())

@@ -115,11 +115,8 @@ impl Default for User {
 
 impl Drop for User {
     fn drop(&mut self) {
-        if let Ok(data) = serde_json::to_string_pretty(self)
-            && let Err(error) = std::fs::write(Self::PATH_FILE, data)
-        {
-            State::error_string(&error.to_string());
-        }
+        let data = serde_json::to_string_pretty(self).unwrap();
+        std::fs::write(Self::PATH_FILE, data).unwrap();
     }
 }
 

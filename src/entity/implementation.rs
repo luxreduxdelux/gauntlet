@@ -61,11 +61,11 @@ use raylib::prelude::*;
 
 #[typetag::serde(tag = "type")]
 pub trait Entity: Any {
-    fn initialize(
+    fn initialize<'a>(
         &mut self,
         _state: &mut State,
-        _context: &mut Context,
-        _world: &mut World,
+        _context: &'a mut Context,
+        _world: &mut World<'a>,
     ) -> anyhow::Result<()> {
         Ok(())
     }

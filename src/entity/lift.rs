@@ -92,7 +92,10 @@ impl Entity for Lift {
             .physical
             .set_collider_point(self.collider, self.point)?;
 
-        state.asset.set_model(context, "data/video/lift.glb")?;
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/lift.glb")?;
 
         Ok(())
     }
@@ -101,11 +104,11 @@ impl Entity for Lift {
         &mut self,
         state: &mut State,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
         let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
-        let model = state.asset.get_model("data/video/lift.glb")?;
+        let model = world.scene.asset.get_model("data/video/lift.glb")?;
 
         model.draw(&mut context.r3d, point, 1.0);
 

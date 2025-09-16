@@ -57,12 +57,17 @@ use std::collections::HashMap;
 
 //================================================================
 
+pub struct AssetSound<'a> {
+    pub sound: Sound<'a>,
+    pub alias: Vec<SoundAlias<'a, 'a>>,
+}
+
 #[derive(Default)]
 pub struct Asset<'a> {
     model: HashMap<String, crate::external::r3d::Model>,
     texture: HashMap<String, Texture2D>,
     shader: HashMap<String, Shader>,
-    sound: HashMap<String, Sound<'a>>,
+    sound: HashMap<String, AssetSound<'a>>,
     music: HashMap<String, Music<'a>>,
     font: HashMap<String, Font>,
 }
@@ -139,19 +144,35 @@ impl<'a> Asset<'a> {
         self.shader.contains_key(name)
     }
 
-    pub fn set_sound(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Sound<'a>> {
+    pub fn set_sound(
+        &mut self,
+        context: &'a Context,
+        name: &str,
+        alias_count: usize,
+    ) -> anyhow::Result<&AssetSound<'a>> {
         if self.has_sound(name) {
             return self.get_sound(name);
         }
 
         let sound = context.audio.new_sound(name)?;
 
-        self.sound.insert(name.to_string(), sound);
+        let mut alias = Vec::with_capacity(alias_count);
+
+        unsafe {
+            let sound = &sound as *const Sound;
+
+            for _ in 0..alias_count {
+                alias.push((*sound).alias()?);
+            }
+        }
+
+        self.sound
+            .insert(name.to_string(), AssetSound { sound, alias });
 
         self.get_sound(name)
     }
 
-    pub fn get_sound(&self, name: &str) -> anyhow::Result<&Sound<'a>> {
+    pub fn get_sound(&self, name: &str) -> anyhow::Result<&AssetSound<'a>> {
         self.sound.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_sound(): Could not find asset \"{name}\"."
         )))
@@ -159,6 +180,28 @@ impl<'a> Asset<'a> {
 
     pub fn has_sound(&self, name: &str) -> bool {
         self.sound.contains_key(name)
+    }
+
+    pub fn set_music(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Music<'a>> {
+        if self.has_music(name) {
+            return self.get_music(name);
+        }
+
+        let music = context.audio.new_music(name)?;
+
+        self.music.insert(name.to_string(), music);
+
+        self.get_music(name)
+    }
+
+    pub fn get_music(&self, name: &str) -> anyhow::Result<&Music<'a>> {
+        self.music.get(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_music(): Could not find asset \"{name}\"."
+        )))
+    }
+
+    pub fn has_music(&self, name: &str) -> bool {
+        self.music.contains_key(name)
     }
 
     pub fn set_font(

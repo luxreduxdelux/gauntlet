@@ -73,7 +73,20 @@ fn main() -> anyhow::Result<()> {
         std::env::set_var("RUST_BACKTRACE", "1");
     }
 
-    let mut context = Context::new()?;
+    std::panic::set_hook(Box::new(|panic_info| {
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        std::fs::write(format!("panic_{time}"), panic_info.to_string()).unwrap();
+        State::error_string(&format!(
+            "A fatal error has ocurred. The file \"panic_{time}\" has been written to your game's root directory."
+        ));
+
+        eprintln!("{panic_info}");
+    }));
+
+    let mut context = Context::new().unwrap();
     let mut state = State::default();
 
     context.apply_user(&state.user);
@@ -82,10 +95,10 @@ fn main() -> anyhow::Result<()> {
 
     unsafe {
         let context = &mut context as *mut Context;
-        State::error(state.initialize(&mut *context));
+        state.initialize(&mut *context).unwrap();
     };
 
-    State::error(state.main(&mut context));
+    state.main(&mut context).unwrap();
 
     // weird drop bug in raylib-rs will cause state to drop incorrectly.
     drop(state);

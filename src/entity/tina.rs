@@ -78,9 +78,12 @@ impl Entity for Tina {
         &mut self,
         state: &mut State,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        state.asset.set_model(context, "data/video/tina.glb")?;
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/tina.glb")?;
 
         Ok(())
     }
@@ -102,9 +105,9 @@ impl Entity for Tina {
         &mut self,
         state: &mut State,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        let model = state.asset.get_model("data/video/tina.glb")?;
+        let model = world.scene.asset.get_model("data/video/tina.glb")?;
 
         let point = (context.handle.get_time() as f32 * 3.0).sin() * 4.0;
 

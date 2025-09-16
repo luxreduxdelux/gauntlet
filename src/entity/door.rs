@@ -82,10 +82,16 @@ impl Entity for Door {
         &mut self,
         state: &mut State,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        state.asset.set_model(context, "data/video/door_a.glb")?;
-        state.asset.set_model(context, "data/video/door_b.glb")?;
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/door_a.glb")?;
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/door_b.glb")?;
 
         Ok(())
     }
@@ -94,18 +100,18 @@ impl Entity for Door {
         &mut self,
         state: &mut State,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
 
         let point_a = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.00;
         let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.25;
 
-        let model_a = state.asset.get_model("data/video/door_a.glb")?;
+        let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
 
         model_a.draw(&mut context.r3d, point_a, 1.0);
 
-        let model_b = state.asset.get_model("data/video/door_b.glb")?;
+        let model_b = world.scene.asset.get_model("data/video/door_b.glb")?;
 
         model_b.draw(&mut context.r3d, point_b, 1.0);
 

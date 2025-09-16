@@ -63,7 +63,7 @@ use std::collections::HashSet;
 //================================================================
 
 #[derive(Deserialize)]
-pub struct World {
+pub struct World<'a> {
     pub level: String,
     pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip)]
@@ -75,7 +75,7 @@ pub struct World {
     #[serde(skip)]
     pub node_list: Vec<Path>,
     #[serde(skip)]
-    pub scene: Scene,
+    pub scene: Scene<'a>,
     #[serde(skip)]
     pub physical: Physical,
     #[serde(skip)]
@@ -84,7 +84,7 @@ pub struct World {
     step: f32,
 }
 
-impl World {
+impl<'a> World<'a> {
     pub const TIME_STEP: f32 = 1.0 / 60.0;
 
     pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
@@ -93,12 +93,13 @@ impl World {
 
         file.scene.initialize(context)?;
 
-        let model = state
+        let model = file
+            .scene
             .asset
             .set_model(context, &format!("data/level/{}", file.level))?;
         file.physical.new_model(model)?;
 
-        state.asset.set_shader(
+        file.scene.asset.set_shader(
             context,
             "screen",
             Some("data/shader/base.vs"),
@@ -107,11 +108,12 @@ impl World {
 
         unsafe {
             let world = &mut file as *mut Self;
+            let ctx = context as *mut Context;
 
             for entity in &mut file.entity_list {
                 entity.set_index(file.entity_index);
                 file.entity_index += 1;
-                entity.initialize(state, context, &mut *world)?;
+                entity.initialize(state, &mut *ctx, &mut *world)?;
             }
         }
 
@@ -178,6 +180,8 @@ impl World {
             }
         }
 
+        self.scene.update();
+
         unsafe {
             for entity in &mut self.entity_list {
                 entity.main(state, draw, &mut *world)?;
@@ -188,7 +192,8 @@ impl World {
             let context = context as *mut Context;
 
             self.scene.draw_r3d(&mut *context, |draw| {
-                let model = state
+                let model = (*world)
+                    .scene
                     .asset
                     .get_model(&format!("data/level/{}", self.level))
                     .unwrap();

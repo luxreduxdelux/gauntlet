@@ -52,21 +52,34 @@ use raylib::prelude::*;
 
 //================================================================
 
+use crate::asset::*;
 use crate::external::r3d::*;
 use crate::state::*;
+use crate::utility::Direction;
 
 //================================================================
 
-pub struct Scene {
+struct Noise {
+    point: Option<Vector3>,
+    range: f32,
+    alias: Option<usize>,
+    path: String,
+}
+
+// sound/music manager.
+// portal visibility manager.
+// level geometry manager.
+pub struct Scene<'a> {
+    pub asset: Asset<'a>,
     pub camera_3d: Camera3D,
     pub camera_2d: Camera2D,
     texture: Option<RenderTexture2D>,
-    // sound/music manager.
-    // portal visibility manager.
-    // level geometry manager.
+    sound_list: Vec<Noise>,
+    music_list: Vec<Noise>,
+    pub pause: bool,
 }
 
-impl Scene {
+impl<'a> Scene<'a> {
     pub fn initialize(&mut self, context: &mut Context) -> anyhow::Result<()> {
         self.texture = Some(
             context
@@ -76,6 +89,160 @@ impl Scene {
 
         self.camera_3d =
             Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
+
+        Ok(())
+    }
+
+    pub fn pause(&mut self) -> anyhow::Result<()> {
+        self.pause = true;
+
+        for noise in &self.sound_list {
+            let sound = self.asset.get_sound(&noise.path)?;
+            sound.sound.pause();
+
+            for alias in &sound.alias {
+                alias.pause();
+            }
+        }
+
+        for noise in &self.music_list {
+            let music = self.asset.get_music(&noise.path)?;
+            music.pause_stream();
+        }
+
+        Ok(())
+    }
+
+    pub fn resume(&mut self) -> anyhow::Result<()> {
+        self.pause = false;
+
+        for noise in &self.sound_list {
+            let sound = self.asset.get_sound(&noise.path)?;
+            sound.sound.resume();
+
+            for alias in &sound.alias {
+                alias.resume();
+            }
+        }
+
+        for noise in &self.music_list {
+            let music = self.asset.get_music(&noise.path)?;
+            music.resume_stream();
+        }
+
+        Ok(())
+    }
+
+    pub fn play_sound(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
+        let sound = self.asset.get_sound(path)?;
+
+        if sound.sound.is_playing() {
+            for (i, alias) in sound.alias.iter().enumerate() {
+                if !alias.is_playing() {
+                    alias.play();
+
+                    self.sound_list.push(Noise {
+                        point,
+                        range: 16.0,
+                        alias: Some(i),
+                        path: path.to_string(),
+                    });
+
+                    break;
+                }
+            }
+        } else {
+            sound.sound.play();
+
+            self.sound_list.push(Noise {
+                point,
+                range: 16.0,
+                alias: None,
+                path: path.to_string(),
+            });
+        }
+
+        Ok(())
+    }
+
+    pub fn play_music(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
+        let music = self.asset.get_music(path)?;
+        music.play_stream();
+
+        self.music_list.push(Noise {
+            point,
+            range: 16.0,
+            alias: None,
+            path: path.to_string(),
+        });
+
+        Ok(())
+    }
+
+    fn calculate_distance_pan(&self, point: Vector3, range: f32) -> (f32, f32) {
+        let distance = (point - self.camera_3d.position).length();
+        let distance = (1.0 - (distance / range)).clamp(0.0, 1.0);
+
+        let direction = (point - self.camera_3d.position).normalized();
+        let y = self
+            .camera_3d
+            .up
+            .cross(self.camera_3d.target - self.camera_3d.position)
+            .normalized();
+        let pan = (y.dot(direction) + 1.0) / 2.0;
+
+        (distance, pan)
+    }
+
+    pub fn update(&mut self) -> anyhow::Result<()> {
+        if self.pause {
+            return Ok(());
+        }
+
+        for noise in &self.sound_list {
+            if let Some(point) = noise.point {
+                let (distance, pan) = self.calculate_distance_pan(point, noise.range);
+
+                let sound = self.asset.get_sound(&noise.path)?;
+
+                if let Some(alias) = noise.alias {
+                    let alias = sound.alias.get(alias).unwrap();
+                    alias.set_volume(distance);
+                    alias.set_pan(pan);
+                } else {
+                    sound.sound.set_volume(distance);
+                    sound.sound.set_pan(pan);
+                }
+            }
+        }
+
+        for noise in &self.music_list {
+            let music = self.asset.get_music(&noise.path)?;
+            music.update_stream();
+
+            if let Some(point) = noise.point {
+                let (distance, pan) = self.calculate_distance_pan(point, noise.range);
+
+                music.set_volume(distance);
+                music.set_pan(pan);
+            }
+        }
+
+        self.sound_list.retain(|noise| {
+            let sound = self.asset.get_sound(&noise.path).unwrap();
+
+            if let Some(alias) = noise.alias {
+                let alias = sound.alias.get(alias).unwrap();
+                alias.is_playing()
+            } else {
+                sound.sound.is_playing()
+            }
+        });
+
+        self.music_list.retain(|noise| {
+            let music = self.asset.get_music(&noise.path).unwrap();
+            music.is_stream_playing()
+        });
 
         Ok(())
     }
@@ -136,14 +303,9 @@ impl Scene {
         mut call: F,
     ) -> anyhow::Result<()> {
         let texture = self.texture.as_mut().unwrap();
-        let mut draw = draw.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
+        let mut draw = draw.begin_mode2D(self.camera_2d);
 
-        //let shd = state.asset.get_shader("screen")?;
+        //let shd = world.scene.asset.get_shader("screen")?;
         //let mut shd = draw_2d.begin_shader_mode(shd);
 
         draw.draw_texture_pro(
@@ -169,17 +331,26 @@ impl Scene {
     }
 }
 
-impl Default for Scene {
+impl<'a> Default for Scene<'a> {
     fn default() -> Self {
         Self {
+            asset: Asset::default(),
             camera_3d: Camera3D::perspective(
                 Vector3::zero(),
                 Vector3::zero(),
                 Vector3::zero(),
                 f32::default(),
             ),
-            camera_2d: Camera2D::default(),
+            camera_2d: Camera2D {
+                offset: Vector2::zero(),
+                target: Vector2::zero(),
+                rotation: 0.0,
+                zoom: 1.0,
+            },
             texture: None,
+            sound_list: Vec::default(),
+            music_list: Vec::default(),
+            pause: bool::default(),
         }
     }
 }
