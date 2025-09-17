@@ -49,42 +49,51 @@
 */
 
 use crate::entity::implementation::*;
+use crate::scene::*;
 use crate::state::*;
 use crate::world::*;
 
 //================================================================
 
-use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Serialize, Deserialize, Default)]
-enum TutorialKind {
-    #[default]
-    Move,
-    Jump,
-    Duck,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct Tutorial {
+#[derive(Serialize, Deserialize)]
+pub struct ViewNode {
     point: Vector3,
-    scale: Vector3,
-    which: TutorialKind,
+    parent: String,
     #[serde(skip)]
-    collider: ColliderHandle,
-    #[serde(skip)]
-    index: usize,
+    info: EntityInfo,
 }
-
-impl Tutorial {}
 
 #[typetag::serde]
-impl Entity for Tutorial {
-    fn get_index(&mut self) -> &mut usize {
-        &mut self.index
+impl Entity for ViewNode {
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ViewParent {
+    point: Vector3,
+    angle: Vector3,
+    name: String,
+    #[serde(skip)]
+    info: EntityInfo,
+}
+
+#[typetag::serde]
+impl Entity for ViewParent {
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
     }
 
     fn initialize(
@@ -93,37 +102,24 @@ impl Entity for Tutorial {
         _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.physical.new_cuboid(self.scale);
-        world
-            .physical
-            .set_collider_point(self.collider, self.point)?;
-        world.physical.set_collider_sensor(self.collider, true)?;
+        let mut view = View::default();
+        view.point = self.point;
+        view.angle = self.angle;
 
-        Ok(())
-    }
+        for entity in &mut world.entity_list {
+            if let Some(view_node) = entity.as_any_mut().downcast_mut::<ViewNode>() {
+                if view_node.parent == self.name {
+                    view.child.push(view_node.point);
 
-    fn draw_2d(
-        &mut self,
-        _state: &mut State,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        let half = Vector2::new(
-            draw.get_render_width() as f32 * 0.5,
-            draw.get_render_height() as f32 * 0.5,
-        );
-
-        match self.which {
-            TutorialKind::Move => {
-                draw.draw_text("foo", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Jump => {
-                draw.draw_text("bar", half.x as i32, half.y as i32, 32, Color::RED);
-            }
-            TutorialKind::Duck => {
-                draw.draw_text("baz", half.x as i32, half.y as i32, 32, Color::RED);
+                    // TO-DO use entity_detach here.
+                    view_node.info.close = true;
+                }
             }
         }
+
+        world.scene.view_list.push(view);
+
+        self.info.close = true;
 
         Ok(())
     }

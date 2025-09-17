@@ -90,7 +90,7 @@ pub struct Player {
     #[serde(skip)]
     shake: f32,
     #[serde(skip)]
-    index: usize,
+    info: EntityInfo,
 }
 
 impl Player {
@@ -111,14 +111,20 @@ impl Player {
 
         //================================================================
 
-        let movement = world
-            .physical
-            .move_controller(self.collider, self.character, self.speed)?;
-        let position = Vector3::new(
-            movement.translation.x,
-            movement.translation.y,
-            movement.translation.z,
-        );
+        let movement =
+            world
+                .scene
+                .physical
+                .move_controller(self.collider, self.character, self.speed)?;
+        let position = if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
+            self.speed * World::TIME_STEP
+        } else {
+            Vector3::new(
+                movement.translation.x,
+                movement.translation.y,
+                movement.translation.z,
+            )
+        };
 
         self.clash = false;
         self.slide = movement.is_sliding_down_slope;
@@ -128,7 +134,11 @@ impl Player {
         }
 
         self.point += position;
-        self.floor = movement.grounded;
+        self.floor = if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
+            true
+        } else {
+            movement.grounded
+        };
 
         Ok(())
     }
@@ -136,8 +146,11 @@ impl Player {
 
 #[typetag::serde]
 impl Entity for Player {
-    fn get_index(&mut self) -> &mut usize {
-        &mut self.index
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
     }
 
     fn initialize<'a>(
@@ -146,6 +159,7 @@ impl Entity for Player {
         context: &'a mut Context,
         world: &mut World<'a>,
     ) -> anyhow::Result<()> {
+        /*
         world
             .scene
             .asset
@@ -156,10 +170,13 @@ impl Entity for Player {
             .set_sound(context, "data/audio/donut.wav", 8)?;
 
         world.scene.play_music("data/audio/test.mp3", None)?;
+        */
 
-        self.collider = world
-            .physical
-            .new_cuboid_entity(self.point, Self::CUBE_SHAPE, self.index);
+        self.collider =
+            world
+                .scene
+                .physical
+                .new_cuboid_entity(self.point, Self::CUBE_SHAPE, &self.info);
 
         // this has something to do with being stuck on the ground after a dash jump.
         self.character = KinematicCharacterController::default();
@@ -181,11 +198,7 @@ impl Entity for Player {
         world: &mut World,
     ) -> anyhow::Result<()> {
         if draw.is_key_down(KeyboardKey::KEY_TAB) {
-            world.physical.draw();
-        }
-
-        if draw.is_key_pressed(KeyboardKey::KEY_Q) {
-            world.scene.play_sound("data/audio/donut.wav", None)?;
+            world.scene.physical.draw();
         }
 
         draw.draw_cube(Vector3::new(0.0, 2.0, 0.0), 0.25, 0.25, 0.25, Color::RED);
@@ -488,12 +501,12 @@ impl PlayerState {
                     */
 
                     if *time <= 0.0 {
-                        for x in 0..3 {
+                        for x in 0..0 {
                             let ray = raylib::math::Ray::new(player.point + ray_list[x], move_z);
 
                             // WARNING! this will sometimes cause a crash!
                             // wall-run.
-                            if let Some((_, info)) = world.physical.cast_ray(
+                            if let Some((_, info)) = world.scene.physical.cast_ray(
                                 ray,
                                 0.05,
                                 true,
@@ -595,7 +608,7 @@ impl PlayerState {
                     let ray = raylib::math::Ray::new(player.point + ray_list[x], ray);
 
                     // wall-run.
-                    if let Some(_) = world.physical.cast_ray(
+                    if let Some(_) = world.scene.physical.cast_ray(
                         ray,
                         0.05,
                         true,

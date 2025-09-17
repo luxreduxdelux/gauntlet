@@ -59,6 +59,12 @@ use raylib::prelude::*;
 
 //================================================================
 
+#[derive(Default)]
+pub struct EntityInfo {
+    pub index: usize,
+    pub close: bool,
+}
+
 #[typetag::serde(tag = "type")]
 pub trait Entity: Any {
     fn initialize<'a>(
@@ -72,13 +78,8 @@ pub trait Entity: Any {
 
     //================================================================
 
-    fn get_index(&mut self) -> &mut usize;
-
-    //================================================================
-
-    fn set_index(&mut self, index: usize) {
-        *self.get_index() = index;
-    }
+    fn get_info(&self) -> &EntityInfo;
+    fn get_info_mutable(&mut self) -> &mut EntityInfo;
 
     //================================================================
 

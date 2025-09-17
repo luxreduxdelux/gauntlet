@@ -48,16 +48,116 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use rapier3d::prelude::*;
 use raylib::prelude::*;
 
 //================================================================
 
 use crate::asset::*;
 use crate::external::r3d::*;
+use crate::physical::*;
 use crate::state::*;
 use crate::utility::Direction;
 
 //================================================================
+
+#[derive(Default, Debug, Clone)]
+pub struct Room {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub scale: Vector3,
+    pub path: String,
+    pub view: Vec<usize>,
+    pub visible: bool,
+    pub visit: bool,
+}
+
+impl<'a> Room {
+    fn traverse(
+        room_index: usize,
+        handle: &mut Handle,
+        view_list: &[View],
+        room_list: &mut [Room],
+        asset: &mut Asset<'a>,
+        inside: bool,
+    ) {
+        let current_room = &mut room_list[room_index];
+
+        if current_room.visit {
+            return;
+        }
+
+        current_room.visit = true;
+
+        if current_room.is_visible(handle, view_list) || inside {
+            current_room.visible = true;
+
+            let model = asset.get_model(&current_room.path).unwrap();
+            model.draw(handle, Vector3::zero(), 1.0);
+
+            let c_r_view = current_room.view.clone();
+
+            for view in &c_r_view {
+                for room in &view_list[*view].room {
+                    Self::traverse(*room, handle, view_list, room_list, asset, false);
+                }
+            }
+        } else {
+            current_room.visible = false;
+        }
+    }
+
+    fn is_camera_inside(&self, camera: Camera3D) -> bool {
+        let shape = Cuboid::new(vector![self.scale.x, self.scale.y, self.scale.z]);
+
+        shape.contains_point(
+            &Isometry::new(
+                vector![self.point.x, self.point.y, self.point.z],
+                vector![0.0, 0.0, 0.0],
+            ),
+            &point![camera.position.x, camera.position.y, camera.position.z],
+        )
+    }
+
+    fn is_visible(&self, handle: &Handle, view_list: &[View]) -> bool {
+        if self.view.is_empty() {
+            return true;
+        }
+
+        for view in &self.view {
+            if view_list[*view].is_visible(handle) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+#[derive(Default, Debug, Clone)]
+pub struct View {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub child: Vec<Vector3>,
+    pub visible: bool,
+    pub room: Vec<usize>,
+}
+
+impl View {
+    fn is_visible(&self, handle: &Handle) -> bool {
+        if !self.visible {
+            return false;
+        }
+
+        for child in &self.child {
+            if handle.is_point_in_frustum(*child) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
 
 struct Noise {
     point: Option<Vector3>,
@@ -76,6 +176,9 @@ pub struct Scene<'a> {
     texture: Option<RenderTexture2D>,
     sound_list: Vec<Noise>,
     music_list: Vec<Noise>,
+    pub room_list: Vec<Room>,
+    pub view_list: Vec<View>,
+    pub physical: Physical,
     pub pause: bool,
 }
 
@@ -89,6 +192,26 @@ impl<'a> Scene<'a> {
 
         self.camera_3d =
             Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
+
+        for (i_v, view) in self.view_list.iter_mut().enumerate() {
+            for (i_r, room) in self.room_list.iter_mut().enumerate() {
+                let direction = Direction::new_from_angle(&view.angle);
+                let direction_f = raylib::math::Ray::new(view.point, direction.x);
+                let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
+
+                let model = self.asset.get_model(&room.path)?;
+                let bound = model.bounding_box();
+
+                if bound.get_ray_collision_box(direction_f).hit
+                    || bound.get_ray_collision_box(direction_b).hit
+                {
+                    room.view.push(i_v);
+                    view.room.push(i_r);
+                }
+            }
+        }
+
+        println!("{:#?}", self.room_list);
 
         Ok(())
     }
@@ -111,6 +234,43 @@ impl<'a> Scene<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn add_room(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        let model = self.asset.set_model(context, path)?;
+        let bound = model.bounding_box();
+
+        self.physical.new_model(model)?;
+
+        self.room_list.push(Room {
+            point: (bound.min + bound.max) * 0.5,
+            angle: Vector3::zero(),
+            scale: (bound.max - bound.min) * 0.5,
+            path: path.to_string(),
+            view: Vec::default(),
+            visible: false,
+            visit: false,
+        });
+
+        Ok(())
+    }
+
+    pub fn add_view(
+        &mut self,
+        point: Vector3,
+        angle: Vector3,
+        child: Vec<Vector3>,
+    ) -> anyhow::Result<usize> {
+        let mut view = View::default();
+        view.point = point;
+        view.angle = angle;
+        view.child = child;
+
+        let index = self.view_list.len();
+
+        self.view_list.push(view);
+
+        Ok(index)
     }
 
     pub fn resume(&mut self) -> anyhow::Result<()> {
@@ -148,19 +308,19 @@ impl<'a> Scene<'a> {
                         path: path.to_string(),
                     });
 
-                    break;
+                    return Ok(());
                 }
             }
-        } else {
-            sound.sound.play();
-
-            self.sound_list.push(Noise {
-                point,
-                range: 16.0,
-                alias: None,
-                path: path.to_string(),
-            });
         }
+
+        sound.sound.play();
+
+        self.sound_list.push(Noise {
+            point,
+            range: 16.0,
+            alias: None,
+            path: path.to_string(),
+        });
 
         Ok(())
     }
@@ -272,6 +432,24 @@ impl<'a> Scene<'a> {
         let mut result = Ok(());
 
         context.r3d.render_ex(self.camera_3d, texture, |r3d| {
+            for room in &mut self.room_list {
+                room.visit = false;
+            }
+
+            for (i, room) in self.room_list.iter().enumerate() {
+                if room.is_camera_inside(self.camera_3d) {
+                    Room::traverse(
+                        i,
+                        r3d,
+                        &self.view_list,
+                        &mut self.room_list,
+                        &mut self.asset,
+                        true,
+                    );
+                    break;
+                }
+            }
+
             // scene should be in charge of level geometry rendering...?
             result = call(r3d);
         });
@@ -292,6 +470,18 @@ impl<'a> Scene<'a> {
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
+
+        //for room in &self.room_list {
+        //    draw.draw_cube_v(room.point, room.scale * 2.0, Color::RED);
+        //}
+
+        for view in &self.view_list {
+            draw.draw_cube_v(view.point, Vector3::one() * 0.25, Color::RED);
+
+            for child in &view.child {
+                draw.draw_cube_v(child, Vector3::one() * 0.25, Color::GREEN);
+            }
+        }
 
         call(&mut draw)
     }
@@ -327,6 +517,20 @@ impl<'a> Scene<'a> {
             Color::WHITE,
         );
 
+        for (i, room) in self.room_list.iter().enumerate() {
+            draw.draw_text(
+                &format!("{}", room.path),
+                8,
+                (8 + 28 * i) as i32,
+                24,
+                if room.visible {
+                    Color::GREEN
+                } else {
+                    Color::RED
+                },
+            );
+        }
+
         call(&mut draw)
     }
 }
@@ -350,6 +554,9 @@ impl<'a> Default for Scene<'a> {
             texture: None,
             sound_list: Vec::default(),
             music_list: Vec::default(),
+            room_list: Vec::default(),
+            view_list: Vec::default(),
+            physical: Physical::default(),
             pause: bool::default(),
         }
     }

@@ -67,15 +67,20 @@ pub struct Door {
     #[serde(skip)]
     scale: f32,
     #[serde(skip)]
-    index: usize,
+    view: usize,
+    #[serde(skip)]
+    info: EntityInfo,
 }
 
 impl Door {}
 
 #[typetag::serde]
 impl Entity for Door {
-    fn get_index(&mut self) -> &mut usize {
-        &mut self.index
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
     }
 
     fn initialize(
@@ -93,6 +98,19 @@ impl Entity for Door {
             .asset
             .set_model(context, "data/video/door_b.glb")?;
 
+        let direction = Direction::new_from_angle(&self.angle);
+
+        let view_child = [
+            self.point + direction.z * 1.2 + direction.y * 1.2,
+            self.point - direction.z * 1.2 + direction.y * 1.2,
+            self.point + direction.z * 1.2 - direction.y * 1.2,
+            self.point - direction.z * 1.2 - direction.y * 1.2,
+        ];
+
+        self.view = world
+            .scene
+            .add_view(self.point, self.angle, view_child.to_vec())?;
+
         Ok(())
     }
 
@@ -105,15 +123,59 @@ impl Entity for Door {
         let direction = Direction::new_from_angle(&self.angle);
 
         let point_a = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.00;
-        let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.25;
+        let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.35;
 
         let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
 
-        model_a.draw(&mut context.r3d, point_a, 1.0);
+        model_a.draw_ex(
+            &mut context.r3d,
+            point_a,
+            direction.y,
+            3.14 / 2.0 + 3.14,
+            Vector3::one(),
+        );
 
         let model_b = world.scene.asset.get_model("data/video/door_b.glb")?;
 
-        model_b.draw(&mut context.r3d, point_b, 1.0);
+        model_b.draw_ex(
+            &mut context.r3d,
+            point_b,
+            direction.y,
+            3.14 / 2.0 + 3.14,
+            Vector3::one(),
+        );
+
+        Ok(())
+    }
+
+    fn draw_3d(
+        &mut self,
+        _state: &mut State,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        let direction = Direction::new_from_angle(&self.angle);
+
+        //draw.draw_ray(Ray::new(self.point, direction.x), Color::RED);
+
+        //draw.draw_cube_v(
+        //    self.point,
+        //    Vector3::new(0.1, 1.2, 1.2) * 2.0,
+        //    Color::new(255, 0, 0, 33),
+        //);
+
+        /*
+        let view_child = [
+            self.point + direction.z * 1.2 + direction.y * 1.2,
+            self.point - direction.z * 1.2 + direction.y * 1.2,
+            self.point + direction.z * 1.2 - direction.y * 1.2,
+            self.point - direction.z * 1.2 - direction.y * 1.2,
+        ];
+
+        for view in view_child {
+            draw.draw_cube_v(view, Vector3::one() * 0.25, Color::RED);
+        }
+        */
 
         Ok(())
     }
@@ -129,6 +191,7 @@ impl Entity for Door {
         let direction = Direction::new_from_angle(&self.angle);
 
         let fwd = world
+            .scene
             .physical
             .cast_cuboid(
                 self.point,
@@ -139,6 +202,7 @@ impl Entity for Door {
             )
             .is_some();
         let bck = world
+            .scene
             .physical
             .cast_cuboid(
                 self.point,
@@ -157,6 +221,14 @@ impl Entity for Door {
         }
 
         self.scale = self.scale.clamp(0.0, 1.0);
+
+        let view = &mut world.scene.view_list[self.view];
+
+        if self.scale > 0.0 {
+            view.visible = true;
+        } else {
+            view.visible = false;
+        }
 
         Ok(())
     }

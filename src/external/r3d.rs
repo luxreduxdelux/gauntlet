@@ -5,7 +5,10 @@
 
 use std::ffi::CString;
 
-use ffi::R3D_ShadowUpdateMode;
+use ffi::{
+    R3D_BlendMode_R3D_BLEND_ALPHA, R3D_ShadowCastMode_R3D_SHADOW_CAST_DISABLED,
+    R3D_ShadowCastMode_R3D_SHADOW_CAST_ON_DOUBLE_SIDED, R3D_ShadowUpdateMode,
+};
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +22,15 @@ impl Into<ffi::Vector3> for Vector3 {
             x: self.x,
             y: self.y,
             z: self.z,
+        }
+    }
+}
+
+impl Into<BoundingBox> for ffi::BoundingBox {
+    fn into(self) -> BoundingBox {
+        BoundingBox {
+            min: self.min.into(),
+            max: self.max.into(),
         }
     }
 }
@@ -159,6 +171,10 @@ impl Handle {
         unsafe {
             ffi::R3D_SetDofMode(enabled as u32);
         }
+    }
+
+    pub fn is_point_in_frustum(&self, position: Vector3) -> bool {
+        unsafe { ffi::R3D_IsPointInFrustum(position.into()) }
     }
 }
 
@@ -480,6 +496,18 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    pub fn generate_cube(
+        handle: &mut Handle,
+        width: f32,
+        height: f32,
+        length: f32,
+        upload: bool,
+    ) -> Self {
+        let inner = unsafe { ffi::R3D_GenMeshCube(width, height, length, upload) };
+
+        Self { inner, weak: false }
+    }
+
     fn from_raw_weak(raw: ffi::R3D_Mesh) -> Self {
         Self {
             inner: raw,
@@ -519,14 +547,48 @@ impl Mesh {
     }
 }
 
+impl Drop for Mesh {
+    fn drop(&mut self) {
+        if !self.weak {
+            unsafe {
+                ffi::R3D_UnloadMesh(&self.inner);
+            }
+        }
+    }
+}
+
 pub struct Model {
     inner: ffi::R3D_Model,
     weak: bool,
 }
 
 impl Model {
+    pub fn load_from_mesh(handle: &mut Handle, mesh: &mut Mesh) -> Self {
+        mesh.weak = true;
+
+        let inner = unsafe { ffi::R3D_LoadModelFromMesh(&mesh.inner) };
+
+        Self { inner, weak: false }
+    }
+
     pub fn new(_handle: &mut Handle, file_path: &str) -> Self {
         let inner = unsafe { ffi::R3D_LoadModel(CString::new(file_path).unwrap().as_ptr()) };
+
+        unsafe {
+            /*
+            for x in 0..inner.materialCount {
+                let mut material = *inner.materials.wrapping_add(x as usize);
+
+                material.albedo.color = Color::new(255, 255, 255, 127).into();
+                material.orm.occlusion = 0.0;
+                material.orm.roughness = 0.0;
+                material.orm.metalness = 0.0;
+                material.blendMode = R3D_BlendMode_R3D_BLEND_ALPHA;
+
+                *inner.materials.wrapping_add(x as usize) = material;
+            }
+            */
+        }
 
         Self { inner, weak: false }
     }
@@ -542,6 +604,29 @@ impl Model {
         unsafe {
             ffi::R3D_DrawModel(&self.inner, position.into(), scale);
         }
+    }
+
+    pub fn draw_ex(
+        &self,
+        _handle: &mut Handle,
+        position: Vector3,
+        rotationAxis: Vector3,
+        rotationAngle: f32,
+        scale: Vector3,
+    ) {
+        unsafe {
+            ffi::R3D_DrawModelEx(
+                &self.inner,
+                position.into(),
+                rotationAxis.into(),
+                rotationAngle,
+                scale.into(),
+            );
+        }
+    }
+
+    pub fn bounding_box(&self) -> BoundingBox {
+        self.inner.aabb.into()
     }
 
     // TO-DO this should not use a vector...

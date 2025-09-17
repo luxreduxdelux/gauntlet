@@ -68,17 +68,20 @@ pub struct Lift {
     #[serde(skip)]
     scale: f32,
     #[serde(skip)]
-    index: usize,
-    #[serde(skip)]
     collider: ColliderHandle,
+    #[serde(skip)]
+    info: EntityInfo,
 }
 
 impl Lift {}
 
 #[typetag::serde]
 impl Entity for Lift {
-    fn get_index(&mut self) -> &mut usize {
-        &mut self.index
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
     }
 
     fn initialize(
@@ -87,9 +90,8 @@ impl Entity for Lift {
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.physical.new_cuboid(Vector3::new(1.0, 0.25, 1.0));
-        world
-            .physical
+        self.collider = world.scene.physical.new_cuboid(Vector3::new(1.0, 0.25, 1.0));
+        world.scene.physical
             .set_collider_point(self.collider, self.point)?;
 
         world
@@ -123,7 +125,7 @@ impl Entity for Lift {
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
 
-        let up = world.physical.cast_cuboid(
+        let up = world.scene.physical.cast_cuboid(
             self.point,
             Vector3::new(1.0, 0.5, 1.0),
             direction.y,
@@ -144,7 +146,7 @@ impl Entity for Lift {
 
         let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
 
-        world.physical.set_collider_point(self.collider, point)?;
+        world.scene.physical.set_collider_point(self.collider, point)?;
 
         Ok(())
     }

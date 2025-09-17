@@ -70,15 +70,18 @@ pub struct Light {
     #[serde(skip)]
     handle: Option<crate::external::r3d::Light>,
     #[serde(skip)]
-    index: usize,
+    info: EntityInfo,
 }
 
 impl Light {}
 
 #[typetag::serde]
 impl Entity for Light {
-    fn get_index(&mut self) -> &mut usize {
-        &mut self.index
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
     }
 
     fn initialize(

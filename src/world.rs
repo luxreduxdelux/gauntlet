@@ -49,8 +49,6 @@
 */
 
 use crate::entity::implementation::*;
-use crate::entity::path::*;
-use crate::physical::*;
 use crate::scene::*;
 use crate::state::*;
 
@@ -58,30 +56,23 @@ use crate::state::*;
 
 use raylib::prelude::*;
 use serde::Deserialize;
-use std::collections::HashSet;
 
 //================================================================
 
 #[derive(Deserialize)]
 pub struct World<'a> {
     pub level: String,
+    #[serde(skip)]
+    pub time: f32,
+    #[serde(skip)]
+    step: f32,
     pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip)]
     entity_index: usize,
     #[serde(skip)]
     entity_attach: Vec<Box<dyn Entity>>,
     #[serde(skip)]
-    entity_detach: HashSet<usize>,
-    #[serde(skip)]
-    pub node_list: Vec<Path>,
-    #[serde(skip)]
     pub scene: Scene<'a>,
-    #[serde(skip)]
-    pub physical: Physical,
-    #[serde(skip)]
-    pub time: f32,
-    #[serde(skip)]
-    step: f32,
 }
 
 impl<'a> World<'a> {
@@ -91,13 +82,10 @@ impl<'a> World<'a> {
         let file = std::fs::read_to_string(path)?;
         let mut file: Self = serde_json::from_str(&file)?;
 
-        file.scene.initialize(context)?;
-
-        let model = file
-            .scene
-            .asset
-            .set_model(context, &format!("data/level/{}", file.level))?;
-        file.physical.new_model(model)?;
+        for x in 0..2 {
+            file.scene
+                .add_room(context, &format!("data/level/level_{x}.glb"))?;
+        }
 
         file.scene.asset.set_shader(
             context,
@@ -111,28 +99,32 @@ impl<'a> World<'a> {
             let ctx = context as *mut Context;
 
             for entity in &mut file.entity_list {
-                entity.set_index(file.entity_index);
+                let info = entity.get_info_mutable();
+                info.index = file.entity_index;
                 file.entity_index += 1;
                 entity.initialize(state, &mut *ctx, &mut *world)?;
             }
         }
 
+        file.scene.initialize(context)?;
+
         Ok(file)
     }
 
     pub fn entity_attach<T: Entity>(&mut self, mut entity: T) {
-        entity.set_index(self.entity_index);
+        let info = entity.get_info_mutable();
+        info.index = self.entity_index;
         self.entity_index += 1;
         self.entity_attach.push(Box::new(entity));
     }
 
-    pub fn entity_detach<T: Entity>(&mut self, entity: &mut T) {
-        self.entity_detach.insert(*entity.get_index());
+    pub fn entity_detach<T: Entity>(&mut self, entity: &T) {
+        //
     }
 
     pub fn entity_find(&mut self, index: usize) -> Option<&mut Box<(dyn Entity)>> {
         for entity in &mut self.entity_list {
-            if *entity.get_index() == index {
+            if entity.get_info().index == index {
                 return Some(entity);
             }
         }
@@ -154,10 +146,10 @@ impl<'a> World<'a> {
             self.step += frame_time;
 
             while self.step >= Self::TIME_STEP {
-                self.physical.tick();
+                self.scene.physical.tick();
 
                 // improve this API, please.
-                if let Ok(lock) = &self.physical.collision_handler.collision_list.lock() {
+                if let Ok(lock) = &self.scene.physical.collision_handler.collision_list.lock() {
                     for event in lock.iter() {
                         println!("{event:?}");
                     }
@@ -169,11 +161,9 @@ impl<'a> World<'a> {
                     }
                 }
 
-                // extend the entity list with the back-buffer.
                 self.entity_list.append(&mut self.entity_attach);
-                // remove any entity in the entity detach list.
                 self.entity_list
-                    .retain_mut(|entity| !self.entity_detach.contains(entity.get_index()));
+                    .retain_mut(|entity| !entity.get_info().close);
 
                 self.time += Self::TIME_STEP;
                 self.step -= Self::TIME_STEP;
@@ -192,14 +182,6 @@ impl<'a> World<'a> {
             let context = context as *mut Context;
 
             self.scene.draw_r3d(&mut *context, |draw| {
-                let model = (*world)
-                    .scene
-                    .asset
-                    .get_model(&format!("data/level/{}", self.level))
-                    .unwrap();
-
-                model.draw(draw, Vector3::zero(), 1.0);
-
                 for entity in &mut self.entity_list {
                     entity.draw_r3d(state, &mut *context, &mut *world).unwrap();
                 }
@@ -210,14 +192,6 @@ impl<'a> World<'a> {
             self.scene.draw_3d(&mut *context, draw, |draw| {
                 for entity in &mut self.entity_list {
                     entity.draw_3d(state, draw, &mut *world).unwrap();
-                }
-
-                for node in &self.node_list {
-                    draw.draw_cube(node.point, 0.25, 0.25, 0.25, Color::RED);
-
-                    if let Some(next_item) = &node.next_item {
-                        draw.draw_line_3D(node.point, next_item.point, Color::GREEN);
-                    }
                 }
 
                 Ok(())

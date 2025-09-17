@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::world::*;
+use crate::{entity::implementation::*, world::*};
 
 //================================================================
 
@@ -199,11 +199,11 @@ impl Physical {
         &mut self,
         point: Vector3,
         shape: Vector3,
-        index: usize,
+        info: &EntityInfo,
     ) -> ColliderHandle {
         let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
             .translation(vector![point.x, point.y, point.z])
-            .user_data(index as u128)
+            .user_data(info.index as u128)
             //.active_events(ActiveEvents::COLLISION_EVENTS)
             //.active_collision_types(ActiveCollisionTypes::all())
             .build();
