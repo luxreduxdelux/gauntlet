@@ -66,37 +66,222 @@ use std::f32;
 
 //================================================================
 
+#[derive(PartialEq, Copy, Clone, Default)]
+pub enum Device {
+    Board {
+        index: usize,
+    },
+    #[default]
+    Mouse,
+}
+
+#[derive(PartialEq)]
+enum DeviceResponse {
+    Accept,
+    Cancel,
+    SideA,
+    SideB,
+}
+
+impl Device {
+    const BOARD_DEVICE_RESPONSE: [(DeviceResponse, KeyboardKey); 4] = [
+        (DeviceResponse::Accept, KeyboardKey::KEY_ENTER),
+        (DeviceResponse::Cancel, KeyboardKey::KEY_ESCAPE),
+        (DeviceResponse::SideA, KeyboardKey::KEY_LEFT),
+        (DeviceResponse::SideB, KeyboardKey::KEY_RIGHT),
+    ];
+    const MOUSE_DEVICE_RESPONSE: [(DeviceResponse, MouseButton); 2] = [
+        (DeviceResponse::Accept, MouseButton::MOUSE_BUTTON_LEFT),
+        (DeviceResponse::Cancel, MouseButton::MOUSE_BUTTON_RIGHT),
+    ];
+
+    fn is_board(&self) -> bool {
+        matches!(self, Self::Board { .. })
+    }
+
+    fn is_mouse(&self) -> bool {
+        matches!(self, Self::Mouse)
+    }
+
+    fn poll_change(&self, handle: &mut RaylibHandle) -> Self {
+        let mut new_device = None;
+
+        if handle.get_key_pressed().is_some() {
+            new_device = Some(Self::Board {
+                index: usize::default(),
+            })
+        }
+
+        if matches!(self, Self::Board { .. }) {
+            let delta = handle.get_mouse_delta();
+
+            if delta.length() != 0.0 {
+                new_device = Some(Self::Mouse)
+            }
+        } else {
+            if Input::get_mouse_pressed(handle).is_some() {
+                new_device = Some(Self::Mouse)
+            }
+        }
+
+        if let Some(n_d) = new_device
+            && std::mem::discriminant(&n_d) != std::mem::discriminant(self)
+        {
+            if matches!(n_d, Self::Mouse) {
+                handle.enable_cursor();
+            } else {
+                handle.disable_cursor();
+            }
+
+            n_d
+        } else {
+            *self
+        }
+    }
+
+    fn hover(&self, handle: &RaylibHandle, widget_index: usize, widget_shape: Rectangle) -> bool {
+        match self {
+            Device::Board { index } => *index == widget_index,
+            Device::Mouse => widget_shape.check_collision_point_rec(handle.get_mouse_position()),
+        }
+    }
+
+    fn update_index(&mut self, handle: &mut RaylibHandle, bound: usize) {
+        match self {
+            Device::Board { index } => {
+                if handle.is_key_pressed(KeyboardKey::KEY_UP) {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if handle.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                    *index += 1;
+                }
+
+                *index = *index % bound;
+            }
+            Device::Mouse => {}
+        }
+    }
+
+    fn response(&self, handle: &RaylibHandle) -> Option<(DeviceResponse, bool)> {
+        match self {
+            Device::Board { .. } => {
+                for (response, key) in Self::BOARD_DEVICE_RESPONSE {
+                    if handle.is_key_pressed(key) || handle.is_key_pressed_repeat(key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_key_released(key) {
+                        return Some((response, false));
+                    }
+                }
+
+                None
+            }
+            Device::Mouse => {
+                for (response, key) in Self::MOUSE_DEVICE_RESPONSE {
+                    if handle.is_mouse_button_pressed(key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_mouse_button_released(key) {
+                        return Some((response, false));
+                    }
+                }
+
+                let delta = handle.get_mouse_wheel_move();
+
+                if delta > 0.0 {
+                    return Some((DeviceResponse::SideB, true));
+                } else if delta < 0.0 {
+                    return Some((DeviceResponse::SideA, true));
+                }
+
+                None
+            }
+        }
+    }
+}
+
 pub struct Response {
     pub hover: bool,
-    pub press: bool,
-    pub release: bool,
+    pub focus: bool,
+    pub device: Option<(DeviceResponse, bool)>,
     pub widget: Widget,
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 pub struct Widget {
     pub delta: f32,
     pub hover: bool,
 }
 
 impl Response {
-    fn new(hover: bool, press: bool, release: bool, widget: Widget) -> Self {
+    fn accept(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::Accept, true)))
+    }
+
+    fn cancel(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::Cancel, true)))
+    }
+
+    fn side_a(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::SideA, true)))
+    }
+
+    fn side_b(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::SideB, true)))
+    }
+
+    fn new_from_window(handle: &RaylibHandle, window: &mut Window, shape: Rectangle) -> Self {
+        let focus = if let Some(focus) = window.focus
+            && focus == window.index
+        {
+            true
+        } else {
+            false
+        };
+        let hover = window.device.hover(handle, window.index, shape);
+        let hover = (hover && window.focus.is_none()) || focus;
+        let device = if hover {
+            window.device.response(handle)
+        } else {
+            None
+        };
+
+        let widget = window.widget.entry(window.index).or_default();
+
+        if hover {
+            if !widget.hover {
+                widget.hover = true;
+            }
+        } else {
+            if widget.hover {
+                widget.hover = false;
+            }
+        }
+
         Self {
             hover,
-            press,
-            release,
-            widget,
+            focus,
+            device,
+            widget: *widget,
         }
     }
 }
 
 #[derive(Default)]
 pub struct Window<'a> {
-    widget: HashMap<String, Widget>,
+    widget: HashMap<usize, Widget>,
     scene: Scene<'a>,
     point: Vector2,
-    mouse: Vector2,
-    focus: Option<String>,
+    index: usize,
+    device: Device,
+    focus: Option<usize>,
     time: f32,
 }
 
@@ -124,20 +309,15 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    fn begin(&mut self, handle: &RaylibHandle) {
+    fn begin(&mut self, handle: &mut RaylibHandle) {
         self.point = Vector2::new(8.0, 8.0);
-
-        if self.mouse == Vector2::zero() {
-            let delta = handle.get_mouse_delta();
-
-            if delta != Vector2::zero() {
-                self.mouse = handle.get_mouse_position();
-            }
-        } else {
-            self.mouse = handle.get_mouse_position();
-        }
+        self.index = usize::default();
     }
-    fn close(&mut self) {}
+
+    fn close(&mut self, handle: &mut RaylibHandle) {
+        self.device.update_index(handle, self.index);
+        self.device = self.device.poll_change(handle);
+    }
 
     fn font_label(&self) -> anyhow::Result<&Font> {
         self.scene.asset.get_font("data/video/font_label.ttf")
@@ -147,57 +327,21 @@ impl<'a> Window<'a> {
         self.scene.asset.get_font("data/video/font_title.ttf")
     }
 
-    fn response(
-        &mut self,
-        handle: &RaylibHandle,
-        text: &str,
-        shape: Rectangle,
-    ) -> anyhow::Result<Response> {
-        let focus = if let Some(focus) = &self.focus
-            && focus == text
-        {
-            true
-        } else {
-            false
-        };
-        let hover = shape.check_collision_point_rec(self.mouse) || focus;
-        let press = handle.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT);
-        let release = handle.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT);
-
-        let entry = self.widget.entry(text.to_string()).or_default();
-        let frame = handle.get_frame_time();
-
-        if self.focus.is_some() && !focus {
-            return Ok(Response::new(false, false, false, *entry));
-        }
-
-        if hover {
-            entry.delta += frame * 8.0;
-
-            if !entry.hover {
-                self.scene
-                    .asset
-                    .get_sound("data/audio/hover.ogg")?
-                    .sound
-                    .play();
-
-                entry.hover = true;
-            }
-        } else {
-            entry.delta -= frame * 4.0;
-            entry.hover = false;
-        }
-
-        entry.delta = entry.delta.clamp(0.0, 1.0);
-
-        Ok(Response::new(
-            hover,
-            hover && press,
-            hover && release,
-            *entry,
-        ))
+    fn font_measure(font: &Font, text: &str) -> Vector2 {
+        font.measure_text(text, 32.0, 0.0)
     }
 
+    fn font_draw(
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        font: &Font,
+        text: &str,
+        point: Vector2,
+        color: Color,
+    ) {
+        draw.draw_text_ex(font, text, point, 32.0, 1.0, color);
+    }
+
+    /// Begin a new UI frame.
     pub fn draw<
         T: FnMut(&mut Self, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
     >(
@@ -209,61 +353,9 @@ impl<'a> Window<'a> {
 
         call(self, draw)?;
 
-        self.close();
+        self.close(draw);
 
         Ok(())
-    }
-
-    fn draw_border(
-        &self,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        shape: Rectangle,
-        label: &str,
-        delta: f32,
-    ) -> anyhow::Result<()> {
-        let white = Color::WHITE.lerp(Color::BLACK, delta);
-        let black = Color::BLACK.lerp(Color::WHITE, delta);
-
-        draw.draw_rectangle_rec(shape, black);
-
-        let shape = Rectangle::new(
-            shape.x + 3.0,
-            shape.y + 3.0,
-            shape.width - 6.0,
-            shape.height - 6.0,
-        );
-
-        draw.draw_rectangle_rec(shape, white);
-
-        if !label.is_empty() {
-            draw.draw_text_ex(
-                self.font_label()?,
-                label,
-                Vector2::new(shape.x + 4.0, shape.y - 6.0),
-                Self::BUTTON_SHAPE_Y,
-                Self::FONT_SPACE,
-                black,
-            );
-        }
-
-        Ok(())
-    }
-
-    fn draw_border_text(
-        &mut self,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        text: &str,
-        shape: Rectangle,
-    ) -> anyhow::Result<Response> {
-        let font = self.font_label()?;
-        let size = font.measure_text(text, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
-        let size = Rectangle::new(shape.x, shape.y, shape.width + size.x, shape.height);
-        let response = self.response(draw, text, size)?;
-        let delta = ease_in_out_cubic(response.widget.delta);
-
-        self.draw_border(draw, size, text, delta)?;
-
-        Ok(response)
     }
 
     pub fn button(
@@ -271,64 +363,100 @@ impl<'a> Window<'a> {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
     ) -> anyhow::Result<Response> {
-        let response = self.draw_border_text(
+        let size = { Self::font_measure(self.font_label()?, text) };
+        let size = Rectangle::new(
+            self.point.x,
+            self.point.y,
+            size.x + 16.0,
+            Self::BUTTON_SHAPE_Y,
+        );
+
+        let response = Response::new_from_window(draw, self, size);
+        let color = if response.hover {
+            (Color::WHITE, Color::BLACK)
+        } else {
+            (Color::BLACK, Color::WHITE)
+        };
+
+        //================================================================
+
+        draw.draw_rectangle_rec(size, color.0);
+        Self::font_draw(
             draw,
+            self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
-        )?;
+            self.point + Vector2::new(4.0, -2.0),
+            color.1,
+        );
 
-        if response.press {
-            self.scene
-                .asset
-                .get_sound("data/audio/click.ogg")?
-                .sound
-                .play();
-        }
+        //================================================================
 
-        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+        self.index += 1;
+        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
 
         Ok(response)
     }
 
-    fn toggle(
+    pub fn toggle(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
         value: &mut bool,
     ) -> anyhow::Result<Response> {
-        self.draw_border(
-            draw,
-            Rectangle::new(
-                self.point.x,
-                self.point.y,
-                Self::BUTTON_SHAPE_Y,
-                Self::BUTTON_SHAPE_Y,
-            ),
-            "",
-            if *value { 1.0 } else { 0.0 },
-        )?;
+        let font = self.font_label()?;
+        let size = Self::font_measure(font, text);
+        let size = Rectangle::new(
+            self.point.x,
+            self.point.y,
+            size.x + 16.0,
+            Self::BUTTON_SHAPE_Y,
+        );
 
-        let response = self.draw_border_text(
+        //================================================================
+
+        draw.draw_rectangle_rec(size, Color::BLACK);
+        Self::font_draw(
             draw,
+            font,
             text,
-            Rectangle::new(
-                self.point.x + Self::BUTTON_SHAPE_Y + 8.0,
-                self.point.y,
-                16.0,
-                Self::BUTTON_SHAPE_Y,
-            ),
-        )?;
+            self.point + Vector2::new(4.0, -2.0),
+            Color::WHITE,
+        );
 
-        if response.press {
-            self.scene
-                .asset
-                .get_sound("data/audio/click.ogg")?
-                .sound
-                .play();
+        //================================================================
+
+        let size_a = Rectangle::new(
+            size.x + size.width + 4.0,
+            size.y,
+            Self::BUTTON_SHAPE_Y,
+            Self::BUTTON_SHAPE_Y,
+        );
+        let size_b = Rectangle::new(
+            size_a.x + 4.0,
+            size_a.y + 4.0,
+            size_a.width - 8.0,
+            size_a.height - 8.0,
+        );
+        let response = Response::new_from_window(draw, self, size_a);
+        let color = if response.hover {
+            (Color::WHITE, Color::BLACK)
+        } else {
+            (Color::BLACK, Color::WHITE)
+        };
+        if response.accept() {
             *value = !*value;
         }
 
-        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+        draw.draw_rectangle_rec(size_a, color.0);
+
+        if *value {
+            draw.draw_rectangle_rec(size_b, color.1);
+        }
+
+        //================================================================
+
+        self.index += 1;
+        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
 
         Ok(response)
     }
@@ -338,128 +466,95 @@ impl<'a> Window<'a> {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
         value: &mut f32,
-        bound: (f32, f32, f32),
+        bound: (f32, f32),
+        step: f32,
     ) -> anyhow::Result<Response> {
-        let key = format!("{:.2}", value);
-        let font = self.font_label()?;
-        let size = font.measure_text(&key, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
+        let size = Self::font_measure(self.font_label()?, text);
+        let size = Rectangle::new(
+            self.point.x,
+            self.point.y,
+            size.x + 16.0,
+            Self::BUTTON_SHAPE_Y,
+        );
 
-        self.draw_border(
-            draw,
-            Rectangle::new(
-                self.point.x,
-                self.point.y,
-                size.x + 16.0,
-                Self::BUTTON_SHAPE_Y,
-            ),
-            &key,
-            1.0,
-        )?;
+        //================================================================
 
-        let response = self.draw_border_text(
+        draw.draw_rectangle_rec(size, Color::BLACK);
+        Self::font_draw(
             draw,
+            self.font_label()?,
             text,
-            Rectangle::new(
-                self.point.x + size.x + 24.0,
-                self.point.y,
-                16.0,
-                Self::BUTTON_SHAPE_Y,
-            ),
-        )?;
+            self.point + Vector2::new(4.0, -2.0),
+            Color::WHITE,
+        );
 
-        if response.press {
-            self.scene
-                .asset
-                .get_sound("data/audio/click.ogg")?
-                .sound
-                .play();
-            self.focus = Some(text.to_string());
-        }
+        let size_a = Rectangle::new(
+            size.x + size.width + 4.0,
+            size.y,
+            128.0,
+            Self::BUTTON_SHAPE_Y,
+        );
+        let size_b = Rectangle::new(
+            size_a.x + 4.0,
+            size_a.y + 4.0,
+            (size_a.width - 8.0) * percentage_from_value(*value, bound.0, bound.1),
+            size_a.height - 8.0,
+        );
+        let size_c = Rectangle::new(size_a.x + size_a.width + 4.0, size_a.y, 64.0, size_a.height);
 
-        if let Some(focus) = &self.focus
-            && focus == text
+        //================================================================
+
+        let response = Response::new_from_window(draw, self, size_a);
+        let color = if response.hover {
+            (Color::WHITE, Color::BLACK)
+        } else {
+            (Color::BLACK, Color::WHITE)
+        };
+
+        if let Some((DeviceResponse::Accept, true)) = response.device
+            && self.device.is_mouse()
         {
-            let delta = draw.get_mouse_delta().x;
+            self.focus = Some(self.index)
+        }
 
-            // fix for numerical instability.
-            if delta.abs() > 0.0 {
-                let min = self.point.x + size.x + 24.0;
-                let max = min + 128.0;
-                let percent = ((self.mouse.x - min) / (max - min)).clamp(0.0, 1.0);
-                let percent = percent * (bound.1 - bound.0) + bound.0;
-                let percent = (percent / bound.2).floor() * bound.2;
-
-                *value = percent;
-            }
-
-            if draw.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT) {
-                self.focus = None;
+        if response.focus {
+            if let Some((DeviceResponse::Accept, false)) = response.device {
+                if self.device.is_mouse() {
+                    self.focus = None
+                }
+            } else {
+                let point = draw.get_mouse_position();
+                let point = percentage_from_value(point.x, size_a.x, size_a.x + size_a.width)
+                    .clamp(0.0, 1.0);
+                let end = value_from_percentage(point, bound.0, bound.1);
+                let end = snap_to_grid(end, step);
+                *value = end;
             }
         }
 
-        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+        if response.side_a() {
+            *value -= step;
+        } else if response.side_b() {
+            *value += step;
+        }
 
-        Ok(response)
-    }
+        *value = (*value).clamp(bound.0, bound.1);
 
-    fn action(
-        &mut self,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        text: &str,
-        value: &mut Input,
-    ) -> anyhow::Result<Response> {
-        let key = format!("{}", value);
+        //================================================================
 
-        let font = self.font_label()?;
-        let size = font.measure_text(&key, Self::BUTTON_SHAPE_Y, Self::FONT_SPACE);
-        let size = (size.x / 7.0).ceil() * 7.0;
-
-        self.draw_border(
+        draw.draw_rectangle_rec(size_a, color.0);
+        draw.draw_rectangle_rec(size_b, color.1);
+        draw.draw_rectangle_rec(size_c, Color::BLACK);
+        Self::font_draw(
             draw,
-            Rectangle::new(
-                self.point.x,
-                self.point.y,
-                size + 16.0,
-                Self::BUTTON_SHAPE_Y,
-            ),
-            &key,
-            1.0,
-        )?;
+            self.font_label()?,
+            &*value.to_string(),
+            Vector2::new(size_c.x, size_c.y),
+            Color::WHITE,
+        );
 
-        let response = self.draw_border_text(
-            draw,
-            text,
-            Rectangle::new(
-                self.point.x + size + 24.0,
-                self.point.y,
-                16.0,
-                Self::BUTTON_SHAPE_Y,
-            ),
-        )?;
-
-        if let Some(focus) = &self.focus
-            && focus == text
-        {
-            if let Some(board) = draw.get_key_pressed() {
-                *value = Input::new_board(board as u32);
-                self.focus = None;
-            }
-            if let Some(mouse) = Input::get_mouse_pressed(draw) {
-                *value = Input::new_mouse(mouse as u32);
-                self.focus = None;
-            }
-        }
-
-        if response.press {
-            self.scene
-                .asset
-                .get_sound("data/audio/click.ogg")?
-                .sound
-                .play();
-            self.focus = Some(text.to_string());
-        }
-
-        self.point.y += Self::BUTTON_SHAPE_Y + 8.0;
+        self.index += 1;
+        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
 
         Ok(response)
     }
@@ -478,10 +573,10 @@ impl Layout {
     const INITIAL_POINT: Vector2 = Vector2::new(12.0, 84.0);
 
     fn change_layout(state: &mut State, layout: Option<Self>) {
+        state.window.index = usize::default();
         state.layout = layout;
         state.window.time = 0.0;
         state.window.widget.clear();
-        state.window.mouse = Vector2::zero();
     }
 
     pub fn draw(
@@ -555,15 +650,24 @@ impl Layout {
 
             window.point = Self::INITIAL_POINT;
 
-            if window.button(draw, "begin")?.press {
+            if window.button(draw, "begin")?.accept() {
                 layout = Some(Self::Begin);
             };
-            if window.button(draw, "setup")?.press {
+            if window.button(draw, "setup")?.accept() {
                 layout = Some(Self::Setup);
             };
-            if window.button(draw, "close")?.press {
+            if window.button(draw, "close")?.accept() {
                 layout = Some(Self::Close);
             };
+
+            window.toggle(draw, "toggle", &mut state.user.screen_full)?;
+            window.slider(
+                draw,
+                "slider",
+                &mut state.user.screen_rate,
+                (60.0, 500.0),
+                1.0,
+            )?;
 
             Ok(())
         })?;
@@ -626,9 +730,7 @@ impl Layout {
         draw: &mut RaylibDrawHandle<'_>,
         layout: Option<Self>,
     ) -> anyhow::Result<()> {
-        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE)
-            || draw.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT)
-        {
+        if let Some((DeviceResponse::Cancel, true)) = state.window.device.response(draw) {
             if layout.is_none() {
                 draw.disable_cursor();
             }
@@ -684,10 +786,10 @@ impl Layout {
 
                 window.point = Self::INITIAL_POINT;
 
-                if window.button(draw, "accept")?.press {
+                if window.button(draw, "accept")?.accept() {
                     accept = true;
                 };
-                if window.button(draw, "return")?.press {
+                if window.button(draw, "return")?.accept() {
                     layout = Some(Self::Main);
                 };
 
@@ -730,6 +832,7 @@ impl Layout {
 
             window.point = Self::INITIAL_POINT;
 
+            /*
             window.toggle(draw, "play tutorial", &mut state.user.tutorial)?;
             if window
                 .toggle(draw, "screen full", &mut state.user.screen_full)?
@@ -798,8 +901,9 @@ impl Layout {
             window.action(draw, "duck", &mut state.user.duck)?;
             window.action(draw, "fire a", &mut state.user.fire_a)?;
             window.action(draw, "fire b", &mut state.user.fire_b)?;
+            */
 
-            if window.button(draw, "return")?.press {
+            if window.button(draw, "return")?.accept() {
                 layout = Some(Self::Main);
             };
 
@@ -837,10 +941,10 @@ impl Layout {
 
             window.point = Self::INITIAL_POINT;
 
-            if window.button(draw, "accept")?.press {
+            if window.button(draw, "accept")?.accept() {
                 state.close = true;
             };
-            if window.button(draw, "return")?.press {
+            if window.button(draw, "return")?.accept() {
                 layout = Some(Self::Main);
             };
 

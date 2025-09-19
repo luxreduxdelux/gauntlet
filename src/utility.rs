@@ -148,6 +148,18 @@ pub fn draw_model_transform(
     model.transform = Matrix::identity().into();
 }
 
+pub fn percentage_from_value(input: f32, min: f32, max: f32) -> f32 {
+    (input - min) / (max - min)
+}
+
+pub fn value_from_percentage(input: f32, min: f32, max: f32) -> f32 {
+    min + (max - min) * input
+}
+
+pub fn snap_to_grid(input: f32, grid: f32) -> f32 {
+    (input / grid).floor() * grid
+}
+
 pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {
     // port of raymath's function of the same name.
 

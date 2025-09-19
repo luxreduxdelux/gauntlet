@@ -134,6 +134,9 @@ impl<'a> Room {
     }
 }
 
+// TO-DO a view portal should be one of two classes:
+// - toggle portal (a door): only check if we are set to enable or disable.
+// - camera portal (a window): check if our children nodes are visible.
 #[derive(Default, Debug, Clone)]
 pub struct View {
     pub point: Vector3,
@@ -145,6 +148,8 @@ pub struct View {
 
 impl View {
     fn is_visible(&self, handle: &Handle) -> bool {
+        self.visible
+        /*
         if !self.visible {
             return false;
         }
@@ -156,6 +161,7 @@ impl View {
         }
 
         false
+        */
     }
 }
 

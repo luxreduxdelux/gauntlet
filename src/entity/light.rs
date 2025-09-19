@@ -107,16 +107,4 @@ impl Entity for Light {
 
         Ok(())
     }
-    fn tick(
-        &mut self,
-        _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        if let Some(handle) = &mut self.handle {
-            handle.update_shadow_map();
-        }
-
-        Ok(())
-    }
 }

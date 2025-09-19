@@ -5,10 +5,6 @@
 
 use std::ffi::CString;
 
-use ffi::{
-    R3D_BlendMode_R3D_BLEND_ALPHA, R3D_ShadowCastMode_R3D_SHADOW_CAST_DISABLED,
-    R3D_ShadowCastMode_R3D_SHADOW_CAST_ON_DOUBLE_SIDED, R3D_ShadowUpdateMode,
-};
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -29,6 +25,15 @@ impl Into<ffi::Vector3> for Vector3 {
 impl Into<BoundingBox> for ffi::BoundingBox {
     fn into(self) -> BoundingBox {
         BoundingBox {
+            min: self.min.into(),
+            max: self.max.into(),
+        }
+    }
+}
+
+impl Into<ffi::BoundingBox> for BoundingBox {
+    fn into(self) -> ffi::BoundingBox {
+        ffi::BoundingBox {
             min: self.min.into(),
             max: self.max.into(),
         }
@@ -176,6 +181,10 @@ impl Handle {
     pub fn is_point_in_frustum(&self, position: Vector3) -> bool {
         unsafe { ffi::R3D_IsPointInFrustum(position.into()) }
     }
+
+    pub fn is_bounding_box_in_frustum(&self, bounding_box: BoundingBox) -> bool {
+        unsafe { ffi::R3D_IsAABBInFrustum(bounding_box.into()) }
+    }
 }
 
 impl Drop for Handle {
@@ -200,11 +209,11 @@ pub enum LightType {
 #[derive(Default, Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShadowUpdateMode {
     #[default]
-    /// Shadow maps update every frame for real-time accuracy.
-    Manual,
     /// Shadow maps update only when explicitly requested.
-    Interval,
+    Manual,
     /// Shadow maps update at defined time intervals.
+    Interval,
+    /// Shadow maps update every frame for real-time accuracy.
     Continuous,
 }
 
@@ -465,6 +474,10 @@ impl Light {
         unsafe {
             ffi::R3D_SetShadowSlopeBias(self.inner, value);
         }
+    }
+
+    pub fn get_bounding_box(&self) -> BoundingBox {
+        unsafe { ffi::R3D_GetLightBoundingBox(self.inner).into() }
     }
 }
 
