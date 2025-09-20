@@ -48,12 +48,17 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// TO-DO move asset into world, or at least make F2 reload each asset.
 // TO-DO clean up ray/shape casting for entity API
+// TO-DO animation event system
+// TO-DO AI pathing system
+// TO-DO level generation system
+// TO-DO look into creating own custom model format for level model/entity model
+// TO-DO translation system
 
 mod asset;
 mod entity;
 mod external;
+mod locale;
 mod physical;
 mod scene;
 mod state;

@@ -48,11 +48,10 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// 3D render should have fog, potentially lighting (black light upon grey glass or something)
-// add trail effect from far out into cube
-// cube should also animate, rotating like a rubik's cube
+// TO-DO scroll widget
+// TO-DO key glyph at bottom of screen.
 
-use crate::asset::*;
+use crate::locale::Locale;
 use crate::scene::*;
 use crate::state::*;
 use crate::user::*;
@@ -63,6 +62,7 @@ use crate::utility::*;
 use raylib::prelude::*;
 use std::collections::HashMap;
 use std::f32;
+use std::fmt::Display;
 
 //================================================================
 
@@ -73,6 +73,10 @@ pub enum Device {
     },
     #[default]
     Mouse,
+    Pad {
+        index: usize,
+        stick: f32,
+    },
 }
 
 #[derive(PartialEq)]
@@ -94,6 +98,24 @@ impl Device {
         (DeviceResponse::Accept, MouseButton::MOUSE_BUTTON_LEFT),
         (DeviceResponse::Cancel, MouseButton::MOUSE_BUTTON_RIGHT),
     ];
+    const PAD_DEVICE_RESPONSE: [(DeviceResponse, GamepadButton); 4] = [
+        (
+            DeviceResponse::Accept,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+        ),
+        (
+            DeviceResponse::Cancel,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
+        ),
+        (
+            DeviceResponse::SideA,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
+        ),
+        (
+            DeviceResponse::SideB,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
+        ),
+    ];
 
     fn is_board(&self) -> bool {
         matches!(self, Self::Board { .. })
@@ -101,6 +123,10 @@ impl Device {
 
     fn is_mouse(&self) -> bool {
         matches!(self, Self::Mouse)
+    }
+
+    fn is_pad(&self) -> bool {
+        matches!(self, Self::Pad { .. })
     }
 
     fn poll_change(&self, handle: &mut RaylibHandle) -> Self {
@@ -124,6 +150,13 @@ impl Device {
             }
         }
 
+        if handle.get_gamepad_button_pressed().is_some() {
+            new_device = Some(Self::Pad {
+                index: usize::default(),
+                stick: f32::default(),
+            })
+        }
+
         if let Some(n_d) = new_device
             && std::mem::discriminant(&n_d) != std::mem::discriminant(self)
         {
@@ -143,6 +176,7 @@ impl Device {
         match self {
             Device::Board { index } => *index == widget_index,
             Device::Mouse => widget_shape.check_collision_point_rec(handle.get_mouse_position()),
+            Device::Pad { index, .. } => *index == widget_index,
         }
     }
 
@@ -161,9 +195,42 @@ impl Device {
                     *index += 1;
                 }
 
-                *index = *index % bound;
+                *index %= bound;
             }
             Device::Mouse => {}
+            Device::Pad { index, stick } => {
+                let stick_state =
+                    handle.get_gamepad_axis_movement(0, GamepadAxis::GAMEPAD_AXIS_LEFT_Y);
+
+                if stick_state < -0.1 && *stick >= -0.1 {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if stick_state > 0.1 && *stick <= 0.1 {
+                    *index += 1;
+                }
+
+                *stick = stick_state;
+
+                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP) {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN)
+                {
+                    *index += 1;
+                }
+
+                *index %= bound;
+            }
         }
     }
 
@@ -203,10 +270,26 @@ impl Device {
 
                 None
             }
+            Device::Pad { .. } => {
+                for (response, key) in Self::PAD_DEVICE_RESPONSE {
+                    if handle.is_gamepad_button_pressed(0, key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_gamepad_button_released(0, key) {
+                        return Some((response, false));
+                    }
+
+                    // TO-DO return SideA/SideB with left-stick?
+                }
+
+                None
+            }
         }
     }
 }
 
+#[derive(Default)]
 pub struct Response {
     pub hover: bool,
     pub focus: bool,
@@ -218,6 +301,7 @@ pub struct Response {
 pub struct Widget {
     pub delta: f32,
     pub hover: bool,
+    pub scroll: f32,
 }
 
 impl Response {
@@ -282,6 +366,7 @@ pub struct Window<'a> {
     index: usize,
     device: Device,
     focus: Option<usize>,
+    view: Option<Rectangle>,
     time: f32,
 }
 
@@ -309,7 +394,7 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    fn begin(&mut self, handle: &mut RaylibHandle) {
+    fn begin(&mut self) {
         self.point = Vector2::new(8.0, 8.0);
         self.index = usize::default();
     }
@@ -349,7 +434,7 @@ impl<'a> Window<'a> {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         mut call: T,
     ) -> anyhow::Result<()> {
-        self.begin(draw);
+        self.begin();
 
         call(self, draw)?;
 
@@ -358,18 +443,30 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
+    fn check_visibility(&self, shape: Rectangle) -> bool {
+        if let Some(view) = self.view {
+            view.check_collision_recs(&shape)
+        } else {
+            true
+        }
+    }
+
     pub fn button(
         &mut self,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         text: &str,
     ) -> anyhow::Result<Response> {
-        let size = { Self::font_measure(self.font_label()?, text) };
-        let size = Rectangle::new(
-            self.point.x,
-            self.point.y,
-            size.x + 16.0,
-            Self::BUTTON_SHAPE_Y,
-        );
+        let size = Self::font_measure_box(
+            self.font_label()?,
+            text,
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
+
+        if !self.check_visibility(size) {
+            self.index += 1;
+            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+            return Ok(Response::default());
+        }
 
         let response = Response::new_from_window(draw, self, size);
         let color = if response.hover {
@@ -403,21 +500,24 @@ impl<'a> Window<'a> {
         text: &str,
         value: &mut bool,
     ) -> anyhow::Result<Response> {
-        let font = self.font_label()?;
-        let size = Self::font_measure(font, text);
-        let size = Rectangle::new(
-            self.point.x,
-            self.point.y,
-            size.x + 16.0,
-            Self::BUTTON_SHAPE_Y,
-        );
+        let size = Self::font_measure_box(
+            self.font_label()?,
+            text,
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
+
+        if !self.check_visibility(size) {
+            self.index += 1;
+            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+            return Ok(Response::default());
+        }
 
         //================================================================
 
         draw.draw_rectangle_rec(size, Color::BLACK);
         Self::font_draw(
             draw,
-            font,
+            self.font_label()?,
             text,
             self.point + Vector2::new(4.0, -2.0),
             Color::WHITE,
@@ -469,13 +569,17 @@ impl<'a> Window<'a> {
         bound: (f32, f32),
         step: f32,
     ) -> anyhow::Result<Response> {
-        let size = Self::font_measure(self.font_label()?, text);
-        let size = Rectangle::new(
-            self.point.x,
-            self.point.y,
-            size.x + 16.0,
-            Self::BUTTON_SHAPE_Y,
-        );
+        let size = Self::font_measure_box(
+            self.font_label()?,
+            text,
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
+
+        if !self.check_visibility(size) {
+            self.index += 1;
+            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+            return Ok(Response::default());
+        }
 
         //================================================================
 
@@ -500,7 +604,12 @@ impl<'a> Window<'a> {
             (size_a.width - 8.0) * percentage_from_value(*value, bound.0, bound.1),
             size_a.height - 8.0,
         );
-        let size_c = Rectangle::new(size_a.x + size_a.width + 4.0, size_a.y, 64.0, size_a.height);
+        let size_c = Rectangle::new(
+            size_a.x + size_a.width * 0.5 - 32.0,
+            size_a.y + 8.0,
+            64.0,
+            size_a.height - 16.0,
+        );
 
         //================================================================
 
@@ -530,26 +639,31 @@ impl<'a> Window<'a> {
                 let end = snap_to_grid(end, step);
                 *value = end;
             }
-        }
+        } else {
+            if response.side_a() {
+                *value -= step;
+            } else if response.side_b() {
+                *value += step;
+            }
 
-        if response.side_a() {
-            *value -= step;
-        } else if response.side_b() {
-            *value += step;
+            *value = (*value).clamp(bound.0, bound.1);
         }
-
-        *value = (*value).clamp(bound.0, bound.1);
 
         //================================================================
 
         draw.draw_rectangle_rec(size_a, color.0);
         draw.draw_rectangle_rec(size_b, color.1);
         draw.draw_rectangle_rec(size_c, Color::BLACK);
+        let text = &*value.to_string();
+        let measure = Self::font_measure(self.font_label()?, text);
         Self::font_draw(
             draw,
             self.font_label()?,
-            &*value.to_string(),
-            Vector2::new(size_c.x, size_c.y),
+            text,
+            Vector2::new(
+                size_c.x + size_c.width * 0.5 - measure.x * 0.5,
+                size_c.y - 10.0,
+            ),
             Color::WHITE,
         );
 
@@ -557,6 +671,272 @@ impl<'a> Window<'a> {
         self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
 
         Ok(response)
+    }
+
+    fn font_measure_box(font: &Font, text: &str, shape: Rectangle) -> anyhow::Result<Rectangle> {
+        let size = Self::font_measure(font, text);
+        Ok(Rectangle::new(
+            shape.x,
+            shape.y,
+            shape.width + size.x,
+            shape.height,
+        ))
+    }
+
+    pub fn switch<T: PartialEq + Copy + Display>(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        value: &mut T,
+        bound: &[T],
+    ) -> anyhow::Result<Response> {
+        let size = Self::font_measure_box(
+            self.font_label()?,
+            text,
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
+
+        if !self.check_visibility(size) {
+            self.index += 1;
+            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+            return Ok(Response::default());
+        }
+
+        //================================================================
+
+        draw.draw_rectangle_rec(size, Color::BLACK);
+        Self::font_draw(
+            draw,
+            self.font_label()?,
+            text,
+            self.point + Vector2::new(4.0, -2.0),
+            Color::WHITE,
+        );
+
+        let size_a = Rectangle::new(
+            size.x + size.width + 4.0,
+            size.y,
+            128.0,
+            Self::BUTTON_SHAPE_Y,
+        );
+        let size_b = Rectangle::new(
+            size_a.x + 4.0,
+            size_a.y + 4.0,
+            size_a.width - 8.0,
+            size_a.height - 8.0,
+        );
+
+        //================================================================
+
+        let response = Response::new_from_window(draw, self, size_a);
+        let color = if response.hover {
+            (Color::WHITE, Color::BLACK)
+        } else {
+            (Color::BLACK, Color::WHITE)
+        };
+
+        if response.side_a() {
+            let mut pick = bound.last();
+
+            for (i, choice) in bound.iter().enumerate() {
+                if *choice == *value {
+                    if i > 0 {
+                        pick = bound.get(i - 1);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(pick) = pick {
+                *value = *pick;
+            }
+        }
+
+        if response.side_b() {
+            let mut pick = bound.first();
+
+            for (i, choice) in bound.iter().enumerate() {
+                if *choice == *value {
+                    if let Some(choice) = bound.get(i + 1) {
+                        pick = Some(choice)
+                    }
+                    break;
+                }
+            }
+
+            if let Some(pick) = pick {
+                *value = *pick;
+            }
+        }
+
+        //================================================================
+
+        draw.draw_rectangle_rec(size_a, color.0);
+        draw.draw_rectangle_rec(size_b, color.0);
+        let text = &*value.to_string();
+        let measure = Self::font_measure(self.font_label()?, text);
+        Self::font_draw(
+            draw,
+            self.font_label()?,
+            text,
+            Vector2::new(
+                size_b.x + size_b.width * 0.5 - measure.x * 0.5,
+                size_b.y - 6.0,
+            ),
+            color.1,
+        );
+
+        self.index += 1;
+        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+
+        Ok(response)
+    }
+
+    pub fn action(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        text: &str,
+        value: &mut Input,
+    ) -> anyhow::Result<Response> {
+        let size = Self::font_measure_box(
+            self.font_label()?,
+            text,
+            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+        )?;
+
+        if !self.check_visibility(size) {
+            self.index += 1;
+            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+            return Ok(Response::default());
+        }
+
+        //================================================================
+
+        draw.draw_rectangle_rec(size, Color::BLACK);
+        Self::font_draw(
+            draw,
+            self.font_label()?,
+            text,
+            self.point + Vector2::new(4.0, -2.0),
+            Color::WHITE,
+        );
+
+        let size_a = Rectangle::new(
+            size.x + size.width + 4.0,
+            size.y,
+            128.0,
+            Self::BUTTON_SHAPE_Y,
+        );
+        let size_b = Rectangle::new(
+            size_a.x + 4.0,
+            size_a.y + 4.0,
+            size_a.width - 8.0,
+            size_a.height - 8.0,
+        );
+
+        //================================================================
+
+        let response = Response::new_from_window(draw, self, size_a);
+        let color = if response.hover {
+            (Color::WHITE, Color::BLACK)
+        } else {
+            (Color::BLACK, Color::WHITE)
+        };
+
+        if response.focus {
+            if let Some(board) = draw.get_key_pressed() {
+                *value = Input::new_board(board);
+                self.focus = None;
+            }
+
+            if let Some(mouse) = Input::get_mouse_pressed(draw) {
+                *value = Input::new_mouse(mouse);
+                self.focus = None;
+            }
+
+            if let Some(pad) = Input::get_gamepad_button_pressed(draw, 0) {
+                *value = Input::new_pad(pad);
+                self.focus = None;
+            }
+        } else {
+            if let Some((DeviceResponse::Accept, true)) = response.device {
+                self.focus = Some(self.index)
+            }
+        }
+
+        //================================================================
+
+        draw.draw_rectangle_rec(size_a, color.0);
+        draw.draw_rectangle_rec(size_b, color.0);
+        let text = &*value.to_string();
+        let measure = Self::font_measure(self.font_label()?, text);
+        Self::font_draw(
+            draw,
+            self.font_label()?,
+            text,
+            Vector2::new(
+                size_b.x + size_b.width * 0.5 - measure.x * 0.5,
+                size_b.y - 6.0,
+            ),
+            color.1,
+        );
+
+        self.index += 1;
+        self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+
+        Ok(response)
+    }
+
+    pub fn scroll<
+        F: FnMut(&mut Self, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
+    >(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        shape: Vector2,
+        mut call: F,
+    ) -> anyhow::Result<()> {
+        let size = Rectangle::new(self.point.x, self.point.y, shape.x, shape.y);
+        let form = self.point.y;
+        let response = Response::new_from_window(draw, self, size);
+        let scroll = { self.widget.entry(self.index).or_default().scroll };
+        let index = self.index;
+
+        //================================================================
+
+        self.point.y += scroll;
+
+        let full = self.point.y;
+
+        draw.draw_rectangle_rec(size, Color::RED);
+
+        self.view = Some(size);
+
+        call(self, draw)?;
+
+        self.view = None;
+
+        let full = self.point.y - full;
+
+        if self.device.is_mouse() {
+            let entry = self.widget.entry(index).or_default();
+
+            if response.side_a() {
+                entry.scroll -= Self::BUTTON_SHAPE_Y + 4.0;
+            }
+
+            if response.side_b() {
+                entry.scroll += Self::BUTTON_SHAPE_Y + 4.0;
+            }
+
+            entry.scroll = entry.scroll.clamp(-full + 4.0 + shape.y, 0.0);
+        }
+
+        //================================================================
+
+        self.index += 1;
+        self.point.y = form + shape.y + 4.0;
+
+        Ok(())
     }
 }
 
@@ -668,6 +1048,41 @@ impl Layout {
                 (60.0, 500.0),
                 1.0,
             )?;
+            window.switch(
+                draw,
+                "glyph kind",
+                &mut state.user.glyph_kind,
+                &[
+                    GlyphKind::PlayStation,
+                    GlyphKind::Xbox,
+                    GlyphKind::Nintendo,
+                    GlyphKind::Steam,
+                ],
+            )?;
+            let locale = window.switch(
+                draw,
+                state.locale.locale_kind,
+                &mut state.user.locale_kind,
+                &[LocaleKind::English, LocaleKind::Spanish],
+            )?;
+
+            if locale.side_a() || locale.side_b() {
+                state.locale = Locale::new(state.user.locale_kind);
+            }
+
+            window.action(draw, "action", &mut state.user.move_x_a)?;
+
+            window.scroll(draw, Vector2::new(64.0, 68.0), |window, draw| {
+                for x in 0..16 {
+                    if window.button(draw, &format!("{x}"))?.accept() {
+                        println!("click {x}");
+                    };
+                }
+
+                Ok(())
+            })?;
+
+            window.button(draw, "end")?;
 
             Ok(())
         })?;

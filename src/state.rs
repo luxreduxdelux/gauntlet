@@ -50,6 +50,7 @@
 
 use crate::asset::*;
 use crate::external::*;
+use crate::locale::Locale;
 use crate::user::*;
 use crate::window::*;
 use crate::world::*;
@@ -104,6 +105,7 @@ pub struct State<'a> {
     pub world: Option<World<'a>>,
     pub window: Window<'a>,
     pub layout: Option<Layout>,
+    pub locale: Locale,
     pub user: User,
 }
 
@@ -141,6 +143,7 @@ impl<'a> State<'a> {
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
         self.layout = Some(Layout::Main);
         self.window.initialize(context)?;
+        self.locale = Locale::new(self.user.locale_kind);
 
         Ok(())
     }

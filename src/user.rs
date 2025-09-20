@@ -58,6 +58,44 @@ use std::fmt::Display;
 
 //================================================================
 
+#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
+pub enum GlyphKind {
+    PlayStation,
+    Xbox,
+    Nintendo,
+    Steam,
+}
+
+impl Display for GlyphKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Self::PlayStation => "PlayStation",
+            Self::Xbox => "Xbox",
+            Self::Nintendo => "Nintendo",
+            Self::Steam => "Steam",
+        };
+
+        f.write_str(string)
+    }
+}
+
+#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
+pub enum LocaleKind {
+    English,
+    Spanish,
+}
+
+impl Display for LocaleKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            Self::English => "English",
+            Self::Spanish => "Spanish",
+        };
+
+        f.write_str(string)
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct User {
     pub tutorial: bool,
@@ -69,6 +107,8 @@ pub struct User {
     pub mouse_speed: f32,
     pub volume_sound: f32,
     pub volume_music: f32,
+    pub glyph_kind: GlyphKind,
+    pub locale_kind: LocaleKind,
     pub move_x_a: Input,
     pub move_x_b: Input,
     pub move_z_a: Input,
@@ -100,14 +140,16 @@ impl Default for User {
                 mouse_speed: 1.0,
                 volume_sound: 1.0,
                 volume_music: 1.0,
-                move_x_a: Input::new_board(KeyboardKey::KEY_W as u32),
-                move_x_b: Input::new_board(KeyboardKey::KEY_S as u32),
-                move_z_a: Input::new_board(KeyboardKey::KEY_A as u32),
-                move_z_b: Input::new_board(KeyboardKey::KEY_D as u32),
-                jump: Input::new_board(KeyboardKey::KEY_SPACE as u32),
-                duck: Input::new_mouse(MouseButton::MOUSE_BUTTON_EXTRA as u32),
-                fire_a: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT as u32),
-                fire_b: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT as u32),
+                glyph_kind: GlyphKind::PlayStation,
+                locale_kind: LocaleKind::English,
+                move_x_a: Input::new_board(KeyboardKey::KEY_W),
+                move_x_b: Input::new_board(KeyboardKey::KEY_S),
+                move_z_a: Input::new_board(KeyboardKey::KEY_A),
+                move_z_b: Input::new_board(KeyboardKey::KEY_D),
+                jump: Input::new_board(KeyboardKey::KEY_SPACE),
+                duck: Input::new_mouse(MouseButton::MOUSE_BUTTON_EXTRA),
+                fire_a: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT),
+                fire_b: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
             }
         }
     }
@@ -130,6 +172,13 @@ pub enum Input {
         release: bool,
     },
     Mouse {
+        key: u32,
+        #[serde(skip)]
+        press: bool,
+        #[serde(skip)]
+        release: bool,
+    },
+    Pad {
         key: u32,
         #[serde(skip)]
         press: bool,
@@ -270,6 +319,30 @@ impl Display for Input {
                     MouseButton::MOUSE_BUTTON_BACK => "mouse back",
                 }
             }
+            Self::Pad { key, .. } => {
+                let key = Self::to_pad(*key);
+
+                match key {
+                    GamepadButton::GAMEPAD_BUTTON_UNKNOWN => "UNKNOWN",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP => "LEFT_FACE_UP",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT => "LEFT_FACE_RIGHT",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN => "LEFT_FACE_DOWN",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT => "LEFT_FACE_LEFT",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP => "RIGHT_FACE_UP",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT => "RIGHT_FACE_RIGHT",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN => "RIGHT_FACE_DOWN",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT => "RIGHT_FACE_LEFT",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1 => "LEFT_TRIGGER_1",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2 => "LEFT_TRIGGER_2",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1 => "RIGHT_TRIGGER_1",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2 => "RIGHT_TRIGGER_2",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT => "MIDDLE_LEFT",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE => "MIDDLE",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT => "MIDDLE_RIGHT",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB => "LEFT_THUMB",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB => "RIGHT_THUMB",
+                }
+            }
         };
 
         f.write_str(string)
@@ -277,17 +350,25 @@ impl Display for Input {
 }
 
 impl Input {
-    pub fn new_board(key: u32) -> Input {
+    pub fn new_board(key: KeyboardKey) -> Input {
         Input::Board {
-            key,
+            key: key as u32,
             press: false,
             release: false,
         }
     }
 
-    pub fn new_mouse(key: u32) -> Input {
+    pub fn new_mouse(key: MouseButton) -> Input {
         Input::Mouse {
-            key,
+            key: key as u32,
+            press: false,
+            release: false,
+        }
+    }
+
+    pub fn new_pad(key: GamepadButton) -> Input {
+        Input::Pad {
+            key: key as u32,
             press: false,
             release: false,
         }
@@ -313,11 +394,46 @@ impl Input {
         None
     }
 
+    pub fn get_gamepad_button_pressed(handle: &RaylibHandle, index: i32) -> Option<GamepadButton> {
+        let list = [
+            GamepadButton::GAMEPAD_BUTTON_UNKNOWN,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB,
+        ];
+
+        for button in list {
+            if handle.is_gamepad_button_pressed(index, button) {
+                return Some(button);
+            }
+        }
+
+        None
+    }
+
     fn to_board(value: u32) -> KeyboardKey {
         unsafe { std::mem::transmute(value) }
     }
 
     fn to_mouse(value: u32) -> MouseButton {
+        unsafe { std::mem::transmute(value) }
+    }
+
+    fn to_pad(value: u32) -> GamepadButton {
         unsafe { std::mem::transmute(value) }
     }
 
@@ -349,6 +465,19 @@ impl Input {
                     *release = true;
                 }
             }
+            Input::Pad {
+                key,
+                press,
+                release,
+            } => {
+                if handle.is_gamepad_button_pressed(0, Self::to_pad(*key)) {
+                    *press = true;
+                }
+
+                if handle.is_gamepad_button_released(0, Self::to_pad(*key)) {
+                    *release = true;
+                }
+            }
         }
     }
 
@@ -362,6 +491,10 @@ impl Input {
                 *press = false;
                 *release = false;
             }
+            Input::Pad { press, release, .. } => {
+                *press = false;
+                *release = false;
+            }
         }
     }
 
@@ -369,6 +502,7 @@ impl Input {
         match self {
             Input::Board { key, .. } => handle.is_key_up(Self::to_board(*key)),
             Input::Mouse { key, .. } => handle.is_mouse_button_up(Self::to_mouse(*key)),
+            Input::Pad { key, .. } => handle.is_gamepad_button_up(0, Self::to_pad(*key)),
         }
     }
 
@@ -376,6 +510,7 @@ impl Input {
         match self {
             Input::Board { key, .. } => handle.is_key_down(Self::to_board(*key)),
             Input::Mouse { key, .. } => handle.is_mouse_button_down(Self::to_mouse(*key)),
+            Input::Pad { key, .. } => handle.is_gamepad_button_down(0, Self::to_pad(*key)),
         }
     }
 
@@ -383,6 +518,7 @@ impl Input {
         match self {
             Input::Board { press, .. } => *press,
             Input::Mouse { press, .. } => *press,
+            Input::Pad { press, .. } => *press,
         }
     }
 
@@ -390,6 +526,7 @@ impl Input {
         match self {
             Input::Board { release, .. } => *release,
             Input::Mouse { release, .. } => *release,
+            Input::Pad { release, .. } => *release,
         }
     }
 }
