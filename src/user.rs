@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::state::*;
+use crate::{asset::Asset, state::*, window::Window};
 
 //================================================================
 
@@ -64,6 +64,17 @@ pub enum GlyphKind {
     Xbox,
     Nintendo,
     Steam,
+}
+
+impl GlyphKind {
+    pub fn folder_name(&self) -> &str {
+        match self {
+            GlyphKind::PlayStation => "play_station",
+            GlyphKind::Xbox => "xbox",
+            GlyphKind::Nintendo => "nintendo",
+            GlyphKind::Steam => "steam",
+        }
+    }
 }
 
 impl Display for GlyphKind {
@@ -350,6 +361,80 @@ impl Display for Input {
 }
 
 impl Input {
+    pub fn draw(
+        &self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        state: &mut State,
+        point: Vector2,
+    ) -> anyhow::Result<()> {
+        match self {
+            Input::Board { key, .. } => {
+                Window::font_draw(
+                    draw,
+                    state.window.font_label()?,
+                    &format!("{}", self),
+                    point,
+                    Color::WHITE,
+                );
+            }
+            Input::Mouse { key, .. } => {
+                let key = Self::to_mouse(*key);
+
+                let texture = match key {
+                    MouseButton::MOUSE_BUTTON_LEFT => "mouse_l",
+                    MouseButton::MOUSE_BUTTON_RIGHT => "mouse_r",
+                    MouseButton::MOUSE_BUTTON_MIDDLE => "mouse_m",
+                    MouseButton::MOUSE_BUTTON_SIDE => "mouse_l",
+                    MouseButton::MOUSE_BUTTON_EXTRA => "mouse_l",
+                    MouseButton::MOUSE_BUTTON_FORWARD => "mouse_l",
+                    MouseButton::MOUSE_BUTTON_BACK => "mouse_l",
+                };
+
+                let texture = state
+                    .window
+                    .scene
+                    .asset
+                    .get_texture(&format!("data/video/glyph/mouse/{texture}"))?;
+
+                draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
+            }
+            Input::Pad { key, .. } => {
+                let key = Self::to_pad(*key);
+
+                let texture = match key {
+                    GamepadButton::GAMEPAD_BUTTON_UNKNOWN => "pad_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP => "pad_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT => "pad_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN => "pad_d.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT => "pad_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP => "button_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT => "button_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN => "button_d.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT => "button_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1 => "bumper_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2 => "trigger_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1 => "bumper_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2 => "trigger_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT => "select.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE => "select.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT => "pause.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB => "l_stick_click.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB => "r_stick_click.png",
+                };
+
+                let texture = state
+                    .window
+                    .scene
+                    .asset
+                    .get_texture(&format!("data/video/glyph/play_station/{texture}"))?;
+
+                draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn new_board(key: KeyboardKey) -> Input {
         Input::Board {
             key: key as u32,

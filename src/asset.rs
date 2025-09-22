@@ -114,6 +114,36 @@ impl<'a> Asset<'a> {
         self.model.contains_key(name)
     }
 
+    //================================================================
+
+    pub fn set_texture(
+        &mut self,
+        context: &mut Context,
+        name: &str,
+    ) -> anyhow::Result<&mut Texture2D> {
+        if self.has_texture(name) {
+            return self.get_texture(name);
+        }
+
+        let texture = context.handle.load_texture(&mut context.thread, name)?;
+
+        self.texture.insert(name.to_string(), texture);
+
+        self.get_texture(name)
+    }
+
+    pub fn get_texture(&mut self, name: &str) -> anyhow::Result<&mut Texture2D> {
+        self.texture.get_mut(name).ok_or(anyhow::Error::msg(format!(
+            "Asset::get_texture(): Could not find asset \"{name}\"."
+        )))
+    }
+
+    pub fn has_texture(&self, name: &str) -> bool {
+        self.texture.contains_key(name)
+    }
+
+    //================================================================
+
     pub fn set_shader(
         &mut self,
         context: &mut Context,
@@ -143,6 +173,8 @@ impl<'a> Asset<'a> {
     pub fn has_shader(&self, name: &str) -> bool {
         self.shader.contains_key(name)
     }
+
+    //================================================================
 
     pub fn set_sound(
         &mut self,
@@ -182,6 +214,8 @@ impl<'a> Asset<'a> {
         self.sound.contains_key(name)
     }
 
+    //================================================================
+
     pub fn set_music(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Music<'a>> {
         if self.has_music(name) {
             return self.get_music(name);
@@ -203,6 +237,8 @@ impl<'a> Asset<'a> {
     pub fn has_music(&self, name: &str) -> bool {
         self.music.contains_key(name)
     }
+
+    //================================================================
 
     pub fn set_font(
         &mut self,

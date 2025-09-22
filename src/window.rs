@@ -48,7 +48,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// TO-DO scroll widget
 // TO-DO key glyph at bottom of screen.
 
 use crate::locale::Locale;
@@ -117,6 +116,84 @@ impl Device {
         ),
     ];
 
+    fn draw_glyph_response(
+        window: &mut Window,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        point: Vector2,
+        label: &str,
+        device_response: DeviceResponse,
+    ) -> anyhow::Result<()> {
+        let mut draw_call = |window: &mut Window,
+                             point: Vector2,
+                             texture: &str,
+                             label: &str|
+         -> anyhow::Result<()> {
+            let texture = window.scene.asset.get_texture(texture)?;
+
+            draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
+
+            Window::font_draw(
+                draw,
+                window.font_label()?,
+                label,
+                point + Vector2::new(48.0, 8.0),
+                Color::WHITE,
+            );
+
+            Ok(())
+        };
+
+        match window.device {
+            Device::Board { .. } => {}
+            Device::Mouse => match device_response {
+                DeviceResponse::Accept => {
+                    draw_call(window, point, "data/video/glyph/mouse/button_l.png", label)?;
+                }
+                DeviceResponse::Cancel => {
+                    draw_call(window, point, "data/video/glyph/mouse/button_r.png", label)?;
+                }
+                _ => {
+                    draw_call(window, point, "data/video/glyph/mouse/wheel_u.png", "")?;
+                    draw_call(
+                        window,
+                        point + Vector2::new(40.0, 0.0),
+                        "data/video/glyph/mouse/wheel_d.png",
+                        label,
+                    )?;
+                }
+            },
+            Device::Pad { .. } => match device_response {
+                DeviceResponse::Accept => {
+                    draw_call(
+                        window,
+                        point,
+                        "data/video/glyph/play_station/button_d.png",
+                        label,
+                    )?;
+                }
+                DeviceResponse::Cancel => {
+                    draw_call(
+                        window,
+                        point,
+                        "data/video/glyph/play_station/button_r.png",
+                        label,
+                    )?;
+                }
+                _ => {
+                    draw_call(window, point, "data/video/glyph/play_station/pad_l.png", "")?;
+                    draw_call(
+                        window,
+                        point + Vector2::new(40.0, 0.0),
+                        "data/video/glyph/play_station/pad_r.png",
+                        label,
+                    )?;
+                }
+            },
+        }
+
+        Ok(())
+    }
+
     fn is_board(&self) -> bool {
         matches!(self, Self::Board { .. })
     }
@@ -183,7 +260,9 @@ impl Device {
     fn update_index(&mut self, handle: &mut RaylibHandle, bound: usize) {
         match self {
             Device::Board { index } => {
-                if handle.is_key_pressed(KeyboardKey::KEY_UP) {
+                if handle.is_key_pressed(KeyboardKey::KEY_UP)
+                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_UP)
+                {
                     if *index > 0 {
                         *index -= 1;
                     } else {
@@ -191,7 +270,9 @@ impl Device {
                     }
                 }
 
-                if handle.is_key_pressed(KeyboardKey::KEY_DOWN) {
+                if handle.is_key_pressed(KeyboardKey::KEY_DOWN)
+                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_DOWN)
+                {
                     *index += 1;
                 }
 
@@ -366,7 +447,7 @@ pub struct Window<'a> {
     index: usize,
     device: Device,
     focus: Option<usize>,
-    view: Option<Rectangle>,
+    view: Option<(Rectangle, f32)>,
     time: f32,
 }
 
@@ -375,6 +456,52 @@ impl<'a> Window<'a> {
     const FONT_SPACE: f32 = 1.0;
 
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
+        let glyph_kind = ["play_station", "xbox"];
+        let glyph_list = [
+            "button_d.png",
+            "button_l.png",
+            "button_r.png",
+            "button_u.png",
+            "l_bumper.png",
+            "l_stick_click.png",
+            "l_stick.png",
+            "l_trigger.png",
+            "pad_d.png",
+            "pad_l.png",
+            "pad_r.png",
+            "pad_u.png",
+            "pause.png",
+            "r_bumper.png",
+            "r_stick_click.png",
+            "r_stick.png",
+            "r_trigger.png",
+            "select.png",
+        ];
+
+        for kind in glyph_kind {
+            for list in glyph_list {
+                self.scene
+                    .asset
+                    .set_texture(context, &format!("data/video/glyph/{kind}/{list}"))?;
+            }
+        }
+
+        self.scene
+            .asset
+            .set_texture(context, "data/video/glyph/mouse/button_l.png")?;
+        self.scene
+            .asset
+            .set_texture(context, "data/video/glyph/mouse/button_m.png")?;
+        self.scene
+            .asset
+            .set_texture(context, "data/video/glyph/mouse/button_r.png")?;
+        self.scene
+            .asset
+            .set_texture(context, "data/video/glyph/mouse/wheel_u.png")?;
+        self.scene
+            .asset
+            .set_texture(context, "data/video/glyph/mouse/wheel_d.png")?;
+
         self.scene
             .asset
             .set_font(context, "data/video/font_label.ttf", 32)?;
@@ -404,7 +531,7 @@ impl<'a> Window<'a> {
         self.device = self.device.poll_change(handle);
     }
 
-    fn font_label(&self) -> anyhow::Result<&Font> {
+    pub fn font_label(&self) -> anyhow::Result<&Font> {
         self.scene.asset.get_font("data/video/font_label.ttf")
     }
 
@@ -416,7 +543,7 @@ impl<'a> Window<'a> {
         font.measure_text(text, 32.0, 0.0)
     }
 
-    fn font_draw(
+    pub fn font_draw(
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         font: &Font,
         text: &str,
@@ -443,9 +570,20 @@ impl<'a> Window<'a> {
         Ok(())
     }
 
-    fn check_visibility(&self, shape: Rectangle) -> bool {
-        if let Some(view) = self.view {
-            view.check_collision_recs(&shape)
+    fn check_visibility(&mut self, handle: &RaylibHandle, shape: Rectangle) -> bool {
+        if let Some((view, scroll)) = &mut self.view {
+            if view.check_collision_recs(&shape) {
+                true
+            } else {
+                if self.device.hover(handle, self.index, Rectangle::default()) {
+                    *scroll = (view.y + *scroll) - shape.y;
+                    true
+                } else {
+                    self.index += 1;
+                    self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+                    false
+                }
+            }
         } else {
             true
         }
@@ -462,9 +600,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if !self.check_visibility(size) {
-            self.index += 1;
-            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if !self.check_visibility(draw, size) {
             return Ok(Response::default());
         }
 
@@ -486,6 +622,16 @@ impl<'a> Window<'a> {
             color.1,
         );
 
+        if response.hover {
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(8.0, 768.0 - 64.0),
+                "Accept",
+                DeviceResponse::Accept,
+            )?;
+        }
+
         //================================================================
 
         self.index += 1;
@@ -506,9 +652,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if !self.check_visibility(size) {
-            self.index += 1;
-            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if !self.check_visibility(draw, size) {
             return Ok(Response::default());
         }
 
@@ -548,6 +692,15 @@ impl<'a> Window<'a> {
         }
 
         draw.draw_rectangle_rec(size_a, color.0);
+        if response.hover {
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(8.0, 768.0 - 64.0),
+                "Modify",
+                DeviceResponse::Accept,
+            )?;
+        }
 
         if *value {
             draw.draw_rectangle_rec(size_b, color.1);
@@ -575,9 +728,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if !self.check_visibility(size) {
-            self.index += 1;
-            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if !self.check_visibility(draw, size) {
             return Ok(Response::default());
         }
 
@@ -666,6 +817,22 @@ impl<'a> Window<'a> {
             ),
             Color::WHITE,
         );
+        if response.hover {
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(8.0, 768.0 - 64.0),
+                "",
+                DeviceResponse::Accept,
+            )?;
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(48.0, 768.0 - 64.0),
+                "Modify",
+                DeviceResponse::SideA,
+            )?;
+        }
 
         self.index += 1;
         self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
@@ -696,9 +863,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if !self.check_visibility(size) {
-            self.index += 1;
-            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if !self.check_visibility(draw, size) {
             return Ok(Response::default());
         }
 
@@ -785,6 +950,15 @@ impl<'a> Window<'a> {
             ),
             color.1,
         );
+        if response.hover {
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(8.0, 768.0 - 64.0),
+                "Modify",
+                DeviceResponse::SideA,
+            )?;
+        }
 
         self.index += 1;
         self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
@@ -804,9 +978,7 @@ impl<'a> Window<'a> {
             Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
         )?;
 
-        if !self.check_visibility(size) {
-            self.index += 1;
-            self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+        if !self.check_visibility(draw, size) {
             return Ok(Response::default());
         }
 
@@ -868,6 +1040,8 @@ impl<'a> Window<'a> {
 
         draw.draw_rectangle_rec(size_a, color.0);
         draw.draw_rectangle_rec(size_b, color.0);
+
+        /*
         let text = &*value.to_string();
         let measure = Self::font_measure(self.font_label()?, text);
         Self::font_draw(
@@ -880,6 +1054,7 @@ impl<'a> Window<'a> {
             ),
             color.1,
         );
+        */
 
         self.index += 1;
         self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
@@ -909,11 +1084,9 @@ impl<'a> Window<'a> {
 
         draw.draw_rectangle_rec(size, Color::RED);
 
-        self.view = Some(size);
+        self.view = Some((size, 0.0));
 
         call(self, draw)?;
-
-        self.view = None;
 
         let full = self.point.y - full;
 
@@ -929,11 +1102,16 @@ impl<'a> Window<'a> {
             }
 
             entry.scroll = entry.scroll.clamp(-full + 4.0 + shape.y, 0.0);
+        } else {
+            let entry = self.widget.entry(index).or_default();
+
+            entry.scroll += self.view.as_ref().unwrap().1;
         }
+
+        self.view = None;
 
         //================================================================
 
-        self.index += 1;
         self.point.y = form + shape.y + 4.0;
 
         Ok(())
@@ -965,10 +1143,6 @@ impl Layout {
         context: &mut Context,
     ) -> anyhow::Result<()> {
         state.window.time += draw.get_frame_time();
-
-        // right-click should return to the last menu.
-        // improve slider widget.
-        // add scroll widget?
 
         if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
             if let Some(world) = &mut state.world {
@@ -1072,7 +1246,7 @@ impl Layout {
 
             window.action(draw, "action", &mut state.user.move_x_a)?;
 
-            window.scroll(draw, Vector2::new(64.0, 68.0), |window, draw| {
+            window.scroll(draw, Vector2::new(64.0, 140.0), |window, draw| {
                 for x in 0..16 {
                     if window.button(draw, &format!("{x}"))?.accept() {
                         println!("click {x}");
@@ -1457,6 +1631,7 @@ impl Layout {
             Color::WHITE,
         );
 
+        /*
         let font = window.font_label()?;
 
         draw.draw_text_ex(
@@ -1467,6 +1642,7 @@ impl Layout {
             4.0,
             Color::WHITE,
         );
+        */
 
         Ok(())
     }
