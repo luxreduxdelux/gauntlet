@@ -300,6 +300,7 @@ impl<'a> Scene<'a> {
         view.point = point;
         view.angle = angle;
         view.child = child;
+        view.visible = false;
 
         let index = self.view_list.len();
 
@@ -506,11 +507,9 @@ impl<'a> Scene<'a> {
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
 
+        /*
         for room in &self.room_list {
             let model = self.asset.get_model(&room.path)?;
-
-            //draw.draw_bounding_box(model.bounding_box(), Color::RED);
-            //draw.draw_cube_v(room.point, room.scale * 2.0, Color::RED);
         }
 
         for view in &self.view_list {
@@ -520,6 +519,7 @@ impl<'a> Scene<'a> {
                 draw.draw_cube_v(child, Vector3::one() * 0.25, Color::GREEN);
             }
         }
+        */
 
         call(&mut draw)
     }
@@ -555,6 +555,9 @@ impl<'a> Scene<'a> {
             Color::WHITE,
         );
 
+        draw.draw_fps(0, 0);
+
+        /*
         for (i, room) in self.room_list.iter().enumerate() {
             draw.draw_text(
                 &format!("{}", room.path),
@@ -568,6 +571,7 @@ impl<'a> Scene<'a> {
                 },
             );
         }
+        */
 
         call(&mut draw)
     }

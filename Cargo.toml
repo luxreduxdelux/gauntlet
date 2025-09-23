@@ -17,5 +17,13 @@ rfd        = { version = "0.15.4" }
 cmake 	= { version = "0.1"    }
 bindgen = { version = "0.71.0" }
 
+[profile.dev]
+debug = 0
+
 [profile.dev.package.rapier3d]
 opt-level = 3
+
+[profile.release]
+lto 		  = true
+codegen-units = 1
+panic 		  = "abort"

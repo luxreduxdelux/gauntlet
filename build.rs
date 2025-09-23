@@ -26,11 +26,24 @@ fn main() {
         .define("R3D_RAYLIB_VENDORED", "1")
         // use built-in assimp sub-module.
         .define("R3D_ASSIMP_VENDORED", "1")
-        .define("CMAKE_BUILD_TYPE", "Release")
-        .cxxflag("-O3")
+        .define("ASSIMP_BUILD_ZLIB", "1")
+        .define("BUILD_SHARED_LIBS", "0")
+        //.define("CMAKE_BUILD_TYPE", "Release")
+        //.cxxflag("-O3")
         .build();
 
-    // research if we can use static instead of dylib?
+    println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
     println!("cargo:rustc-link-search=native={}/build", path.display());
-    println!("cargo:rustc-link-lib=dylib=r3d");
+    println!(
+        "cargo:rustc-link-search=native={}/build/external/assimp/lib",
+        path.display()
+    );
+    println!(
+        "cargo:rustc-link-search=native={}/build/external/assimp/contrib/zlib",
+        path.display()
+    );
+    println!("cargo:rustc-link-lib=static=r3d");
+    println!("cargo:rustc-link-lib=static=zlibstatic");
+    println!("cargo:rustc-link-lib=static=assimp");
+    println!("cargo:rustc-link-lib=static=stdc++");
 }
