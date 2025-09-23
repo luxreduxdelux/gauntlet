@@ -27,7 +27,7 @@ impl Locale {
                 close: "terminar",
                 accept: "aceptar",
                 cancel: "cancelar",
-                locale_kind: "aaaaaaaaaaaaaaa",
+                locale_kind: "lenguaje",
             },
         }
     }

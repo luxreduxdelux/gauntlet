@@ -116,6 +116,16 @@ impl Device {
         ),
     ];
 
+    fn escape(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Device::Board { .. } => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
+            Device::Mouse => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
+            Device::Pad { .. } => {
+                handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT)
+            }
+        }
+    }
+
     fn draw_glyph_response(
         window: &mut Window,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
@@ -123,6 +133,8 @@ impl Device {
         label: &str,
         device_response: DeviceResponse,
     ) -> anyhow::Result<()> {
+        let point = Vector2::new(point.x, point.y + draw.get_screen_height() as f32 - 64.0);
+
         let mut draw_call = |window: &mut Window,
                              point: Vector2,
                              texture: &str,
@@ -136,7 +148,7 @@ impl Device {
                 draw,
                 window.font_label()?,
                 label,
-                point + Vector2::new(48.0, 8.0),
+                point + Vector2::new(56.0, 8.0),
                 Color::WHITE,
             );
 
@@ -144,7 +156,21 @@ impl Device {
         };
 
         match window.device {
-            Device::Board { .. } => {}
+            Device::Board { .. } => {
+                let key = match device_response {
+                    DeviceResponse::Accept => "ENTER",
+                    DeviceResponse::Cancel => "ESCAPE",
+                    _ => "<- | ->",
+                };
+
+                Window::font_draw(
+                    draw,
+                    window.font_label()?,
+                    &format!("[{key}] {label}"),
+                    point + Vector2::new(0.0, 8.0),
+                    Color::WHITE,
+                );
+            }
             Device::Mouse => match device_response {
                 DeviceResponse::Accept => {
                     draw_call(window, point, "data/video/glyph/mouse/button_l.png", label)?;
@@ -183,7 +209,7 @@ impl Device {
                     draw_call(window, point, "data/video/glyph/play_station/pad_l.png", "")?;
                     draw_call(
                         window,
-                        point + Vector2::new(40.0, 0.0),
+                        point + Vector2::new(56.0, 0.0),
                         "data/video/glyph/play_station/pad_r.png",
                         label,
                     )?;
@@ -449,6 +475,7 @@ pub struct Window<'a> {
     focus: Option<usize>,
     view: Option<(Rectangle, f32)>,
     time: f32,
+    glyph_kind: GlyphKind,
 }
 
 impl<'a> Window<'a> {
@@ -456,7 +483,7 @@ impl<'a> Window<'a> {
     const FONT_SPACE: f32 = 1.0;
 
     pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
-        let glyph_kind = ["play_station", "xbox"];
+        let glyph_kind = ["play_station", "nintendo", "xbox"];
         let glyph_list = [
             "button_d.png",
             "button_l.png",
@@ -470,12 +497,12 @@ impl<'a> Window<'a> {
             "pad_l.png",
             "pad_r.png",
             "pad_u.png",
-            "pause.png",
+            "middle_r.png",
             "r_bumper.png",
             "r_stick_click.png",
             "r_stick.png",
             "r_trigger.png",
-            "select.png",
+            "middle_l.png",
         ];
 
         for kind in glyph_kind {
@@ -555,17 +582,91 @@ impl<'a> Window<'a> {
 
     /// Begin a new UI frame.
     pub fn draw<
-        T: FnMut(&mut Self, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
+        T: FnMut(&mut State, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
     >(
-        &mut self,
+        state: &mut State<'a>,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         mut call: T,
     ) -> anyhow::Result<()> {
-        self.begin();
+        state.window.glyph_kind = state.user.glyph_kind;
 
-        call(self, draw)?;
+        state.window.begin();
 
-        self.close(draw);
+        call(state, draw)?;
+
+        state.window.close(draw);
+
+        Ok(())
+    }
+
+    pub fn draw_input(
+        &mut self,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        input: &Input,
+        point: Vector2,
+    ) -> anyhow::Result<()> {
+        match input {
+            Input::Board { .. } => {
+                Window::font_draw(
+                    draw,
+                    self.font_label()?,
+                    &format!("{}", input),
+                    point,
+                    Color::WHITE,
+                );
+            }
+            Input::Mouse { key, .. } => {
+                let key = Input::to_mouse(*key);
+
+                let texture = match key {
+                    MouseButton::MOUSE_BUTTON_LEFT => "button_l.png",
+                    MouseButton::MOUSE_BUTTON_RIGHT => "button_r.png",
+                    MouseButton::MOUSE_BUTTON_MIDDLE => "button_m.png",
+                    MouseButton::MOUSE_BUTTON_SIDE => "button_l.png",
+                    MouseButton::MOUSE_BUTTON_EXTRA => "button_l.png",
+                    MouseButton::MOUSE_BUTTON_FORWARD => "button_l.png",
+                    MouseButton::MOUSE_BUTTON_BACK => "button_l.png",
+                };
+
+                let texture = self
+                    .scene
+                    .asset
+                    .get_texture(&format!("data/video/glyph/mouse/{texture}"))?;
+
+                draw.draw_texture_ex(texture, point, 0.0, 0.35, Color::WHITE);
+            }
+            Input::Pad { key, .. } => {
+                let key = Input::to_pad(*key);
+
+                let texture = match key {
+                    GamepadButton::GAMEPAD_BUTTON_UNKNOWN => "pad_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP => "pad_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT => "pad_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN => "pad_d.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT => "pad_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP => "button_u.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT => "button_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN => "button_d.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT => "button_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1 => "l_bumper.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2 => "l_trigger.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1 => "r_bumper.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2 => "r_trigger.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT => "middle_l.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE => "middle.png",
+                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT => "middle_r.png",
+                    GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB => "l_stick_click.png",
+                    GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB => "r_stick_click.png",
+                };
+
+                let texture = self.scene.asset.get_texture(&format!(
+                    "data/video/glyph/{}/{texture}",
+                    self.glyph_kind.folder_name()
+                ))?;
+
+                draw.draw_texture_ex(texture, point, 0.0, 0.35, Color::WHITE);
+            }
+        }
 
         Ok(())
     }
@@ -597,7 +698,7 @@ impl<'a> Window<'a> {
         let size = Self::font_measure_box(
             self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+            Rectangle::new(self.point.x, self.point.y, 24.0, Self::BUTTON_SHAPE_Y),
         )?;
 
         if !self.check_visibility(draw, size) {
@@ -626,7 +727,7 @@ impl<'a> Window<'a> {
             Device::draw_glyph_response(
                 self,
                 draw,
-                Vector2::new(8.0, 768.0 - 64.0),
+                Vector2::new(8.0, 0.0),
                 "Accept",
                 DeviceResponse::Accept,
             )?;
@@ -649,7 +750,7 @@ impl<'a> Window<'a> {
         let size = Self::font_measure_box(
             self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+            Rectangle::new(self.point.x, self.point.y, 24.0, Self::BUTTON_SHAPE_Y),
         )?;
 
         if !self.check_visibility(draw, size) {
@@ -696,7 +797,7 @@ impl<'a> Window<'a> {
             Device::draw_glyph_response(
                 self,
                 draw,
-                Vector2::new(8.0, 768.0 - 64.0),
+                Vector2::new(8.0, 0.0),
                 "Modify",
                 DeviceResponse::Accept,
             )?;
@@ -725,7 +826,7 @@ impl<'a> Window<'a> {
         let size = Self::font_measure_box(
             self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+            Rectangle::new(self.point.x, self.point.y, 24.0, Self::BUTTON_SHAPE_Y),
         )?;
 
         if !self.check_visibility(draw, size) {
@@ -783,21 +884,35 @@ impl<'a> Window<'a> {
                     self.focus = None
                 }
             } else {
-                let point = draw.get_mouse_position();
-                let point = percentage_from_value(point.x, size_a.x, size_a.x + size_a.width)
-                    .clamp(0.0, 1.0);
-                let end = value_from_percentage(point, bound.0, bound.1);
-                let end = snap_to_grid(end, step);
-                *value = end;
+                let delta = draw.get_mouse_delta().x;
+
+                if delta.abs() > 0.0 {
+                    let point = draw.get_mouse_position();
+                    let point = percentage_from_value(point.x, size_a.x, size_a.x + size_a.width)
+                        .clamp(0.0, 1.0);
+                    let end = value_from_percentage(point, bound.0, bound.1);
+                    let end = snap_to_grid(end, step);
+                    *value = end;
+                }
+
+                if response.side_a() {
+                    *value -= step;
+                } else if response.side_b() {
+                    *value += step;
+                }
+
+                *value = (*value).clamp(bound.0, bound.1);
             }
         } else {
-            if response.side_a() {
-                *value -= step;
-            } else if response.side_b() {
-                *value += step;
-            }
+            if !self.device.is_mouse() {
+                if response.side_a() {
+                    *value -= step;
+                } else if response.side_b() {
+                    *value += step;
+                }
 
-            *value = (*value).clamp(bound.0, bound.1);
+                *value = (*value).clamp(bound.0, bound.1);
+            }
         }
 
         //================================================================
@@ -805,7 +920,7 @@ impl<'a> Window<'a> {
         draw.draw_rectangle_rec(size_a, color.0);
         draw.draw_rectangle_rec(size_b, color.1);
         draw.draw_rectangle_rec(size_c, Color::BLACK);
-        let text = &*value.to_string();
+        let text = &format!("{:.2}", value);
         let measure = Self::font_measure(self.font_label()?, text);
         Self::font_draw(
             draw,
@@ -818,20 +933,29 @@ impl<'a> Window<'a> {
             Color::WHITE,
         );
         if response.hover {
-            Device::draw_glyph_response(
-                self,
-                draw,
-                Vector2::new(8.0, 768.0 - 64.0),
-                "",
-                DeviceResponse::Accept,
-            )?;
-            Device::draw_glyph_response(
-                self,
-                draw,
-                Vector2::new(48.0, 768.0 - 64.0),
-                "Modify",
-                DeviceResponse::SideA,
-            )?;
+            let push = if self.device.is_mouse() {
+                Device::draw_glyph_response(
+                    self,
+                    draw,
+                    Vector2::new(8.0, 0.0),
+                    if response.focus { "" } else { "Modify" },
+                    DeviceResponse::Accept,
+                )?;
+
+                40.0
+            } else {
+                0.0
+            };
+
+            if !self.device.is_mouse() || (self.device.is_mouse() && response.focus) {
+                Device::draw_glyph_response(
+                    self,
+                    draw,
+                    Vector2::new(8.0 + push, 0.0),
+                    "Modify",
+                    DeviceResponse::SideA,
+                )?;
+            }
         }
 
         self.index += 1;
@@ -860,7 +984,7 @@ impl<'a> Window<'a> {
         let size = Self::font_measure_box(
             self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+            Rectangle::new(self.point.x, self.point.y, 24.0, Self::BUTTON_SHAPE_Y),
         )?;
 
         if !self.check_visibility(draw, size) {
@@ -900,7 +1024,10 @@ impl<'a> Window<'a> {
             (Color::BLACK, Color::WHITE)
         };
 
-        if response.side_a() {
+        let side_a = (!self.device.is_mouse() && response.side_a());
+        let side_b = (!self.device.is_mouse() && response.side_b()) || response.accept();
+
+        if side_a {
             let mut pick = bound.last();
 
             for (i, choice) in bound.iter().enumerate() {
@@ -917,7 +1044,7 @@ impl<'a> Window<'a> {
             }
         }
 
-        if response.side_b() {
+        if side_b {
             let mut pick = bound.first();
 
             for (i, choice) in bound.iter().enumerate() {
@@ -951,13 +1078,23 @@ impl<'a> Window<'a> {
             color.1,
         );
         if response.hover {
-            Device::draw_glyph_response(
-                self,
-                draw,
-                Vector2::new(8.0, 768.0 - 64.0),
-                "Modify",
-                DeviceResponse::SideA,
-            )?;
+            if self.device.is_mouse() {
+                Device::draw_glyph_response(
+                    self,
+                    draw,
+                    Vector2::new(8.0, 0.0),
+                    "Modify",
+                    DeviceResponse::Accept,
+                )?;
+            } else {
+                Device::draw_glyph_response(
+                    self,
+                    draw,
+                    Vector2::new(8.0, 0.0),
+                    "Modify",
+                    DeviceResponse::SideA,
+                )?;
+            }
         }
 
         self.index += 1;
@@ -975,7 +1112,7 @@ impl<'a> Window<'a> {
         let size = Self::font_measure_box(
             self.font_label()?,
             text,
-            Rectangle::new(self.point.x, self.point.y, 16.0, Self::BUTTON_SHAPE_Y),
+            Rectangle::new(self.point.x, self.point.y, 24.0, Self::BUTTON_SHAPE_Y),
         )?;
 
         if !self.check_visibility(draw, size) {
@@ -1040,6 +1177,20 @@ impl<'a> Window<'a> {
 
         draw.draw_rectangle_rec(size_a, color.0);
         draw.draw_rectangle_rec(size_b, color.0);
+        self.draw_input(
+            draw,
+            value,
+            Vector2::new(size_b.x + size_b.width * 0.5, size_b.y - 6.0),
+        )?;
+        if response.hover && !response.focus {
+            Device::draw_glyph_response(
+                self,
+                draw,
+                Vector2::new(8.0, 0.0),
+                "Modify",
+                DeviceResponse::Accept,
+            )?;
+        }
 
         /*
         let text = &*value.to_string();
@@ -1082,11 +1233,24 @@ impl<'a> Window<'a> {
 
         let full = self.point.y;
 
-        draw.draw_rectangle_rec(size, Color::RED);
+        //draw.draw_rectangle_rec(size, Color::RED);
 
         self.view = Some((size, 0.0));
 
+        unsafe {
+            //ffi::BeginScissorMode(
+            //    size.x as i32,
+            //    size.y as i32,
+            //    size.width as i32,
+            //    size.height as i32,
+            //);
+        }
+
         call(self, draw)?;
+
+        unsafe {
+            //ffi::EndScissorMode();
+        }
 
         let full = self.point.y - full;
 
@@ -1101,7 +1265,10 @@ impl<'a> Window<'a> {
                 entry.scroll += Self::BUTTON_SHAPE_Y + 4.0;
             }
 
-            entry.scroll = entry.scroll.clamp(-full + 4.0 + shape.y, 0.0);
+            let min = (-full + 4.0 + shape.y).min(0.0);
+            let max = (-full + 4.0 + shape.y).max(0.0);
+
+            entry.scroll = entry.scroll.clamp(min, max);
         } else {
             let entry = self.widget.entry(index).or_default();
 
@@ -1144,7 +1311,7 @@ impl Layout {
     ) -> anyhow::Result<()> {
         state.window.time += draw.get_frame_time();
 
-        if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+        if state.window.device.escape(draw) {
             if let Some(world) = &mut state.world {
                 if world.scene.pause {
                     world.scene.resume()?;
@@ -1164,7 +1331,7 @@ impl Layout {
                 _ => Ok(()),
             }?;
         } else {
-            if draw.is_key_pressed(KeyboardKey::KEY_ESCAPE) {
+            if state.window.device.escape(draw) {
                 Self::change_layout(state, Some(Layout::Main));
                 draw.enable_cursor();
             }
@@ -1193,70 +1360,26 @@ impl Layout {
 
         let mut layout = None;
 
-        state.window.draw(&mut draw, |window, draw| {
+        Window::draw(state, &mut draw, |state, draw| {
             Self::draw_head_foot(
-                window,
+                &mut state.window,
                 draw,
                 state.world.is_some(),
                 "pwrmttl",
-                Self::window_time_scale(window),
-            )?;
-
-            window.point = Self::INITIAL_POINT;
-
-            if window.button(draw, "begin")?.accept() {
-                layout = Some(Self::Begin);
-            };
-            if window.button(draw, "setup")?.accept() {
-                layout = Some(Self::Setup);
-            };
-            if window.button(draw, "close")?.accept() {
-                layout = Some(Self::Close);
-            };
-
-            window.toggle(draw, "toggle", &mut state.user.screen_full)?;
-            window.slider(
-                draw,
-                "slider",
-                &mut state.user.screen_rate,
-                (60.0, 500.0),
                 1.0,
             )?;
-            window.switch(
-                draw,
-                "glyph kind",
-                &mut state.user.glyph_kind,
-                &[
-                    GlyphKind::PlayStation,
-                    GlyphKind::Xbox,
-                    GlyphKind::Nintendo,
-                    GlyphKind::Steam,
-                ],
-            )?;
-            let locale = window.switch(
-                draw,
-                state.locale.locale_kind,
-                &mut state.user.locale_kind,
-                &[LocaleKind::English, LocaleKind::Spanish],
-            )?;
 
-            if locale.side_a() || locale.side_b() {
-                state.locale = Locale::new(state.user.locale_kind);
-            }
+            state.window.point = Self::INITIAL_POINT;
 
-            window.action(draw, "action", &mut state.user.move_x_a)?;
-
-            window.scroll(draw, Vector2::new(64.0, 140.0), |window, draw| {
-                for x in 0..16 {
-                    if window.button(draw, &format!("{x}"))?.accept() {
-                        println!("click {x}");
-                    };
-                }
-
-                Ok(())
-            })?;
-
-            window.button(draw, "end")?;
+            if state.window.button(draw, "begin")?.accept() {
+                layout = Some(Self::Begin);
+            };
+            if state.window.button(draw, "setup")?.accept() {
+                layout = Some(Self::Setup);
+            };
+            if state.window.button(draw, "close")?.accept() {
+                layout = Some(Self::Close);
+            };
 
             Ok(())
         })?;
@@ -1319,19 +1442,26 @@ impl Layout {
         draw: &mut RaylibDrawHandle<'_>,
         layout: Option<Self>,
     ) -> anyhow::Result<()> {
-        if let Some((DeviceResponse::Cancel, true)) = state.window.device.response(draw) {
-            if layout.is_none() {
-                draw.disable_cursor();
-            }
+        if let Some(response) = state.window.device.response(draw)
+            && state.window.focus.is_none()
+        {
+            match response {
+                (DeviceResponse::Cancel, true) => {
+                    if layout.is_none() {
+                        draw.disable_cursor();
+                    }
 
-            Self::change_layout(state, layout);
-            state
-                .window
-                .scene
-                .asset
-                .get_sound("data/audio/back.ogg")?
-                .sound
-                .play();
+                    Self::change_layout(state, layout);
+                    state
+                        .window
+                        .scene
+                        .asset
+                        .get_sound("data/audio/back.ogg")?
+                        .sound
+                        .play();
+                }
+                _ => {}
+            }
         }
 
         Ok(())
@@ -1364,6 +1494,7 @@ impl Layout {
                 zoom: 1.0,
             });
 
+            /*
             state.window.draw(&mut draw, |window, draw| {
                 Self::draw_head_foot(
                     window,
@@ -1384,6 +1515,7 @@ impl Layout {
 
                 Ok(())
             })?;
+            */
         }
 
         if let Some(layout) = layout {
@@ -1397,6 +1529,7 @@ impl Layout {
         Ok(())
     }
 
+    #[rustfmt::skip]
     fn setup(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
         Self::layout_back(state, draw, Some(Layout::Main))?;
         Self::draw_back(draw, state.world.is_some(), 1.0);
@@ -1410,89 +1543,106 @@ impl Layout {
 
         let mut layout = None;
 
-        state.window.draw(&mut draw, |window, draw| {
+        Window::draw(state, &mut draw, |state, draw| {
             Self::draw_head_foot(
-                window,
+                &mut state.window,
                 draw,
                 state.world.is_some(),
                 "setup",
-                Self::window_time_scale(window),
+                1.0,
             )?;
 
-            window.point = Self::INITIAL_POINT;
+            state.window.point = Self::INITIAL_POINT;
 
-            /*
-            window.toggle(draw, "play tutorial", &mut state.user.tutorial)?;
-            if window
-                .toggle(draw, "screen full", &mut state.user.screen_full)?
-                .press
-            {
-                if draw.is_window_fullscreen() {
-                    draw.set_window_size(1024, 768);
-                } else {
-                    draw.set_window_size(1920, 1080);
+            let y = draw.get_screen_height() as f32 - 200.0;
+
+            state.window.scroll(draw, Vector2::new(768.0, y), |window, draw| {
+                window.toggle(draw, "play tutorial", &mut state.user.tutorial)?;
+                if window
+                    .toggle(draw, "screen full", &mut state.user.screen_full)?
+                    .accept()
+                {
+                    if draw.is_window_fullscreen() {
+                        draw.set_window_size(1024, 768);
+                    } else {
+                        draw.set_window_size(1920, 1080);
+                    }
+
+                    draw.toggle_fullscreen();
                 }
-
-                draw.toggle_fullscreen();
-            }
-            window.slider(
-                draw,
-                "screen field",
-                &mut state.user.screen_field,
-                (60.0, 120.0, 1.0),
-            )?;
-            window.slider(
-                draw,
-                "screen shake",
-                &mut state.user.screen_shake,
-                (0.0, 2.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "screen tilt",
-                &mut state.user.screen_tilt,
-                (0.0, 2.0, 0.1),
-            )?;
-            if window
-                .slider(
+                window.slider(
                     draw,
-                    "screen rate",
-                    &mut state.user.screen_rate,
-                    (30.0, 300.0, 1.0),
-                )?
-                .release
-            {
-                draw.set_target_fps(state.user.screen_rate as u32);
-            }
-            window.slider(
-                draw,
-                "mouse speed",
-                &mut state.user.mouse_speed,
-                (0.0, 2.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "sound volume",
-                &mut state.user.volume_sound,
-                (0.0, 1.0, 0.1),
-            )?;
-            window.slider(
-                draw,
-                "music volume",
-                &mut state.user.volume_music,
-                (0.0, 1.0, 0.1),
-            )?;
-            window.action(draw, "move x+", &mut state.user.move_x_a)?;
-            window.action(draw, "move x-", &mut state.user.move_x_b)?;
-            window.action(draw, "move z+", &mut state.user.move_z_a)?;
-            window.action(draw, "move z-", &mut state.user.move_z_b)?;
-            window.action(draw, "jump", &mut state.user.jump)?;
-            window.action(draw, "duck", &mut state.user.duck)?;
-            window.action(draw, "fire a", &mut state.user.fire_a)?;
-            window.action(draw, "fire b", &mut state.user.fire_b)?;
-            */
+                    "screen field",
+                    &mut state.user.screen_field,
+                    (60.0, 120.0), 1.0,
+                )?;
+                window.slider(
+                    draw,
+                    "screen shake",
+                    &mut state.user.screen_shake,
+                    (0.0, 2.0),  0.1,
+                )?;
+                window.slider(
+                    draw,
+                    "screen tilt",
+                    &mut state.user.screen_tilt,
+                    (0.0, 2.0,),  0.1,
+                )?;
+                /*
+                if state.window
+                    .slider(
+                        draw,
+                        "screen rate",
+                        &mut state.user.screen_rate,
+                        (30.0, 300.0), 1.0,
+                    )?
+                    .release()
+                {
+                    draw.set_target_fps(state.user.screen_rate as u32);
+                }
+                */
 
-            if window.button(draw, "return")?.accept() {
+                window.slider(
+                    draw,
+                    "mouse speed",
+                    &mut state.user.mouse_speed,
+                    (0.0, 2.0), 0.1,
+                )?;
+                window.slider(
+                    draw,
+                    "sound volume",
+                    &mut state.user.volume_sound,
+                    (0.0, 1.0), 0.1
+                )?;
+                window.slider(
+                    draw,
+                    "music volume",
+                    &mut state.user.volume_music,
+                    (0.0, 1.0), 0.1
+                )?;
+
+                window.switch(draw, "glyph kind", &mut state.user.glyph_kind, &[
+                    GlyphKind::PlayStation,
+                    GlyphKind::Xbox,
+                    GlyphKind::Nintendo,
+                ])?;
+                window.switch(draw, "language", &mut state.user.locale_kind, &[
+                    LocaleKind::English,
+                    LocaleKind::Spanish,
+                ])?;
+
+                window.action(draw, "move x+", &mut state.user.move_x_a)?;
+                window.action(draw, "move x-", &mut state.user.move_x_b)?;
+                window.action(draw, "move z+", &mut state.user.move_z_a)?;
+                window.action(draw, "move z-", &mut state.user.move_z_b)?;
+                window.action(draw, "jump", &mut state.user.jump)?;
+                window.action(draw, "slam", &mut state.user.slam)?;
+                window.action(draw, "pull", &mut state.user.pull)?;
+
+                Ok(())
+            })?;
+
+            if state.window.button(draw, "return")?.accept() {
                 layout = Some(Self::Main);
             };
 
@@ -1519,6 +1669,7 @@ impl Layout {
 
         let mut layout = None;
 
+        /*
         state.window.draw(&mut draw, |window, draw| {
             Self::draw_head_foot(
                 window,
@@ -1539,6 +1690,7 @@ impl Layout {
 
             Ok(())
         })?;
+        */
 
         if let Some(layout) = layout {
             Self::change_layout(state, Some(layout));

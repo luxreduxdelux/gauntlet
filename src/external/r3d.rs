@@ -588,19 +588,19 @@ impl Model {
         let inner = unsafe { ffi::R3D_LoadModel(CString::new(file_path).unwrap().as_ptr()) };
 
         unsafe {
-            /*
-            for x in 0..inner.materialCount {
-                let mut material = *inner.materials.wrapping_add(x as usize);
+            if false {
+                for x in 0..inner.materialCount {
+                    let mut material = *inner.materials.wrapping_add(x as usize);
 
-                material.albedo.color = Color::new(255, 255, 255, 127).into();
-                material.orm.occlusion = 0.0;
-                material.orm.roughness = 0.0;
-                material.orm.metalness = 0.0;
-                material.blendMode = R3D_BlendMode_R3D_BLEND_ALPHA;
+                    material.albedo.color = Color::new(255, 255, 255, 127).into();
+                    material.orm.occlusion = 0.0;
+                    material.orm.roughness = 0.0;
+                    material.orm.metalness = 0.0;
+                    material.blendMode = ffi::R3D_BlendMode_R3D_BLEND_ALPHA;
 
-                *inner.materials.wrapping_add(x as usize) = material;
+                    *inner.materials.wrapping_add(x as usize) = material;
+                }
             }
-            */
         }
 
         Self { inner, weak: false }

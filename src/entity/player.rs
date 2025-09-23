@@ -210,9 +210,8 @@ impl Entity for Player {
         state.user.move_z_a.poll(&draw);
         state.user.move_z_b.poll(&draw);
         state.user.jump.poll(&draw);
-        state.user.duck.poll(&draw);
-        state.user.fire_a.poll(&draw);
-        state.user.fire_b.poll(&draw);
+        state.user.slam.poll(&draw);
+        state.user.pull.poll(&draw);
 
         //================================================================
 
@@ -303,9 +302,8 @@ impl Entity for Player {
         state.user.move_z_a.wipe();
         state.user.move_z_b.wipe();
         state.user.jump.wipe();
-        state.user.duck.wipe();
-        state.user.fire_a.wipe();
-        state.user.fire_b.wipe();
+        state.user.slam.wipe();
+        state.user.pull.wipe();
 
         Ok(())
     }
@@ -417,6 +415,7 @@ impl PlayerState {
                         *jump = 0.5;
                     }
 
+                    /*
                     if state.user.duck.press() && *time <= 0.0 {
                         if state.user.move_z_a.down(handle)
                             || state.user.move_x_b.down(handle)
@@ -429,6 +428,7 @@ impl PlayerState {
                             Self::to_duck(player);
                         }
                     }
+                    */
 
                     let self_speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
 
@@ -532,12 +532,14 @@ impl PlayerState {
                         }
                     }
 
+                    /*
                     if state.user.duck.press() {
                         player.speed.x = 0.0;
                         player.speed.y = -8.0;
                         player.speed.z = 0.0;
                         player.state = Self::Slam { time: 0.0 };
                     }
+                    */
                 }
             }
             Self::Dash { ref mut time } => {
@@ -645,6 +647,7 @@ impl PlayerState {
                     return;
                 }
 
+                /*
                 if state.user.duck.press() {
                     player.speed += plane * Self::WALL_PLANE_JUMP_FORCE * 2.0;
                     player.state = Self::Walk {
@@ -653,6 +656,7 @@ impl PlayerState {
                         null: Self::WALL_PLANE_JUMP_NULL,
                     };
                 }
+                */
             }
         }
     }

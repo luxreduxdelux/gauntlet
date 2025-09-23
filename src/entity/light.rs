@@ -107,4 +107,38 @@ impl Entity for Light {
 
         Ok(())
     }
+
+    fn draw_r3d(
+        &mut self,
+        _state: &mut State,
+        _context: &mut Context,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        if let Some(handle) = &mut self.handle {
+            let active = _world.scene.active_room(self.point);
+
+            if active && !handle.is_active() {
+                println!("on: {}", self.info.index);
+            }
+
+            if !active && handle.is_active() {
+                println!("off: {}", self.info.index);
+            }
+
+            handle.set_active(active);
+        }
+
+        Ok(())
+    }
+
+    fn draw_3d(
+        &mut self,
+        _state: &mut State,
+        _draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        _draw.draw_cube_v(self.point, Vector3::one() * 0.25, Color::YELLOW);
+
+        Ok(())
+    }
 }

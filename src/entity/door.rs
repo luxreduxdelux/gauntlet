@@ -122,16 +122,18 @@ impl Entity for Door {
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
 
-        let point_a = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.00;
-        let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.35;
+        let point_a = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.00;
+        let point_b = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.35;
 
         let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
+
+        // TO-DO correct model in blender
 
         model_a.draw_ex(
             &mut context.r3d,
             point_a,
             direction.y,
-            3.14 / 2.0 + 3.14,
+            3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
         );
 
@@ -141,7 +143,7 @@ impl Entity for Door {
             &mut context.r3d,
             point_b,
             direction.y,
-            3.14 / 2.0 + 3.14,
+            3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
         );
 
@@ -195,7 +197,7 @@ impl Entity for Door {
             .physical
             .cast_cuboid(
                 self.point,
-                Vector3::new(0.75, 0.5, 0.75),
+                Vector3::new(0.6, 0.6, 0.6),
                 direction.x,
                 3.0,
                 rapier3d::prelude::QueryFilter::default().exclude_sensors(),
@@ -206,7 +208,7 @@ impl Entity for Door {
             .physical
             .cast_cuboid(
                 self.point,
-                Vector3::new(0.75, 0.5, 0.75),
+                Vector3::new(0.6, 0.6, 0.6),
                 -direction.x,
                 3.0,
                 rapier3d::prelude::QueryFilter::default().exclude_sensors(),

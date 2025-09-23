@@ -58,12 +58,12 @@ use std::fmt::Display;
 
 //================================================================
 
-#[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
+#[derive(Default, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum GlyphKind {
+    #[default]
     PlayStation,
     Xbox,
     Nintendo,
-    Steam,
 }
 
 impl GlyphKind {
@@ -72,7 +72,6 @@ impl GlyphKind {
             GlyphKind::PlayStation => "play_station",
             GlyphKind::Xbox => "xbox",
             GlyphKind::Nintendo => "nintendo",
-            GlyphKind::Steam => "steam",
         }
     }
 }
@@ -83,7 +82,6 @@ impl Display for GlyphKind {
             Self::PlayStation => "PlayStation",
             Self::Xbox => "Xbox",
             Self::Nintendo => "Nintendo",
-            Self::Steam => "Steam",
         };
 
         f.write_str(string)
@@ -125,9 +123,8 @@ pub struct User {
     pub move_z_a: Input,
     pub move_z_b: Input,
     pub jump: Input,
-    pub duck: Input,
-    pub fire_a: Input,
-    pub fire_b: Input,
+    pub slam: Input,
+    pub pull: Input,
 }
 
 impl User {
@@ -158,9 +155,8 @@ impl Default for User {
                 move_z_a: Input::new_board(KeyboardKey::KEY_A),
                 move_z_b: Input::new_board(KeyboardKey::KEY_D),
                 jump: Input::new_board(KeyboardKey::KEY_SPACE),
-                duck: Input::new_mouse(MouseButton::MOUSE_BUTTON_EXTRA),
-                fire_a: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT),
-                fire_b: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
+                slam: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT),
+                pull: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
             }
         }
     }
@@ -317,43 +313,7 @@ impl Display for Input {
                     KeyboardKey::KEY_VOLUME_DOWN => "volume down",
                 }
             }
-            Self::Mouse { key, .. } => {
-                let key = Self::to_mouse(*key);
-
-                match key {
-                    MouseButton::MOUSE_BUTTON_LEFT => "mouse l.",
-                    MouseButton::MOUSE_BUTTON_RIGHT => "mouse r.",
-                    MouseButton::MOUSE_BUTTON_MIDDLE => "mouse middle",
-                    MouseButton::MOUSE_BUTTON_SIDE => "mouse side",
-                    MouseButton::MOUSE_BUTTON_EXTRA => "mouse extra",
-                    MouseButton::MOUSE_BUTTON_FORWARD => "mouse forward",
-                    MouseButton::MOUSE_BUTTON_BACK => "mouse back",
-                }
-            }
-            Self::Pad { key, .. } => {
-                let key = Self::to_pad(*key);
-
-                match key {
-                    GamepadButton::GAMEPAD_BUTTON_UNKNOWN => "UNKNOWN",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP => "LEFT_FACE_UP",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT => "LEFT_FACE_RIGHT",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN => "LEFT_FACE_DOWN",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT => "LEFT_FACE_LEFT",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP => "RIGHT_FACE_UP",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT => "RIGHT_FACE_RIGHT",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN => "RIGHT_FACE_DOWN",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT => "RIGHT_FACE_LEFT",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1 => "LEFT_TRIGGER_1",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2 => "LEFT_TRIGGER_2",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1 => "RIGHT_TRIGGER_1",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2 => "RIGHT_TRIGGER_2",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT => "MIDDLE_LEFT",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE => "MIDDLE",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT => "MIDDLE_RIGHT",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB => "LEFT_THUMB",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB => "RIGHT_THUMB",
-                }
-            }
+            _ => "",
         };
 
         f.write_str(string)
@@ -361,80 +321,6 @@ impl Display for Input {
 }
 
 impl Input {
-    pub fn draw(
-        &self,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        state: &mut State,
-        point: Vector2,
-    ) -> anyhow::Result<()> {
-        match self {
-            Input::Board { key, .. } => {
-                Window::font_draw(
-                    draw,
-                    state.window.font_label()?,
-                    &format!("{}", self),
-                    point,
-                    Color::WHITE,
-                );
-            }
-            Input::Mouse { key, .. } => {
-                let key = Self::to_mouse(*key);
-
-                let texture = match key {
-                    MouseButton::MOUSE_BUTTON_LEFT => "mouse_l",
-                    MouseButton::MOUSE_BUTTON_RIGHT => "mouse_r",
-                    MouseButton::MOUSE_BUTTON_MIDDLE => "mouse_m",
-                    MouseButton::MOUSE_BUTTON_SIDE => "mouse_l",
-                    MouseButton::MOUSE_BUTTON_EXTRA => "mouse_l",
-                    MouseButton::MOUSE_BUTTON_FORWARD => "mouse_l",
-                    MouseButton::MOUSE_BUTTON_BACK => "mouse_l",
-                };
-
-                let texture = state
-                    .window
-                    .scene
-                    .asset
-                    .get_texture(&format!("data/video/glyph/mouse/{texture}"))?;
-
-                draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
-            }
-            Input::Pad { key, .. } => {
-                let key = Self::to_pad(*key);
-
-                let texture = match key {
-                    GamepadButton::GAMEPAD_BUTTON_UNKNOWN => "pad_u.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP => "pad_u.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT => "pad_r.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN => "pad_d.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT => "pad_l.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP => "button_u.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT => "button_r.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN => "button_d.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT => "button_l.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1 => "bumper_l.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2 => "trigger_l.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1 => "bumper_r.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2 => "trigger_r.png",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT => "select.png",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE => "select.png",
-                    GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT => "pause.png",
-                    GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB => "l_stick_click.png",
-                    GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB => "r_stick_click.png",
-                };
-
-                let texture = state
-                    .window
-                    .scene
-                    .asset
-                    .get_texture(&format!("data/video/glyph/play_station/{texture}"))?;
-
-                draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn new_board(key: KeyboardKey) -> Input {
         Input::Board {
             key: key as u32,
@@ -510,15 +396,15 @@ impl Input {
         None
     }
 
-    fn to_board(value: u32) -> KeyboardKey {
+    pub fn to_board(value: u32) -> KeyboardKey {
         unsafe { std::mem::transmute(value) }
     }
 
-    fn to_mouse(value: u32) -> MouseButton {
+    pub fn to_mouse(value: u32) -> MouseButton {
         unsafe { std::mem::transmute(value) }
     }
 
-    fn to_pad(value: u32) -> GamepadButton {
+    pub fn to_pad(value: u32) -> GamepadButton {
         unsafe { std::mem::transmute(value) }
     }
 

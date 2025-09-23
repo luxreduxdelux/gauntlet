@@ -61,12 +61,12 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct World<'a> {
-    pub level: String,
+    pub level: Vec<String>,
+    pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip)]
     pub time: f32,
     #[serde(skip)]
     step: f32,
-    pub entity_list: Vec<Box<dyn Entity>>,
     #[serde(skip)]
     entity_index: usize,
     #[serde(skip)]
@@ -79,12 +79,20 @@ impl<'a> World<'a> {
     pub const TIME_STEP: f32 = 1.0 / 60.0;
 
     pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
-        let file = std::fs::read_to_string(path)?;
+        let file = &format!("data/level/{path}/{path}.json");
+        let file = std::fs::read_to_string(file)?;
         let mut file: Self = serde_json::from_str(&file)?;
 
+        /*
         for x in 0..2 {
             file.scene
                 .add_room(context, &format!("data/level/level_{x}.glb"))?;
+        }
+        */
+
+        for level in &file.level {
+            file.scene
+                .add_room(context, &format!("data/level/{path}/{level}"))?;
         }
 
         file.scene.asset.set_shader(

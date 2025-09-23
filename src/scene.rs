@@ -48,6 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use rapier3d::parry;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 
@@ -66,6 +67,7 @@ pub struct Room {
     pub point: Vector3,
     pub angle: Vector3,
     pub scale: Vector3,
+    pub bound: BoundingBox,
     pub path: String,
     pub view: Vec<usize>,
     pub visible: bool,
@@ -189,6 +191,17 @@ pub struct Scene<'a> {
 }
 
 impl<'a> Scene<'a> {
+    pub fn active_room(&self, point: Vector3) -> bool {
+        if let Some((_, collider)) = self.physical.cast_point(
+            point,
+            QueryFilter::default().groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+        ) {
+            self.room_list[collider.user_data as usize].visible
+        } else {
+            false
+        }
+    }
+
     pub fn initialize(&mut self, context: &mut Context) -> anyhow::Result<()> {
         self.texture = Some(
             context
@@ -208,9 +221,13 @@ impl<'a> Scene<'a> {
                 let model = self.asset.get_model(&room.path)?;
                 let bound = model.bounding_box();
 
-                if bound.get_ray_collision_box(direction_f).hit
-                    || bound.get_ray_collision_box(direction_b).hit
-                {
+                let hit_f = bound.get_ray_collision_box(direction_f);
+                let hit_b = bound.get_ray_collision_box(direction_b);
+
+                let hit_f = hit_f.hit && hit_f.distance <= 1.0;
+                let hit_b = hit_b.hit && hit_b.distance <= 1.0;
+
+                if hit_f || hit_b {
                     room.view.push(i_v);
                     view.room.push(i_r);
                 }
@@ -246,12 +263,24 @@ impl<'a> Scene<'a> {
         let model = self.asset.set_model(context, path)?;
         let bound = model.bounding_box();
 
+        let collider = self.physical.new_cuboid((bound.max - bound.min) * 0.5);
+        self.physical
+            .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
+        self.physical.set_collider_sensor(collider, true)?;
+        self.physical
+            .set_collider_data(collider, self.room_list.len() as u128)?;
+        self.physical.set_collider_group(
+            collider,
+            InteractionGroups::new(Group::GROUP_32, Group::GROUP_32),
+        )?;
+
         self.physical.new_model(model)?;
 
         self.room_list.push(Room {
             point: (bound.min + bound.max) * 0.5,
             angle: Vector3::zero(),
             scale: (bound.max - bound.min) * 0.5,
+            bound,
             path: path.to_string(),
             view: Vec::default(),
             visible: false,
@@ -477,9 +506,12 @@ impl<'a> Scene<'a> {
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
 
-        //for room in &self.room_list {
-        //    draw.draw_cube_v(room.point, room.scale * 2.0, Color::RED);
-        //}
+        for room in &self.room_list {
+            let model = self.asset.get_model(&room.path)?;
+
+            //draw.draw_bounding_box(model.bounding_box(), Color::RED);
+            //draw.draw_cube_v(room.point, room.scale * 2.0, Color::RED);
+        }
 
         for view in &self.view_list {
             draw.draw_cube_v(view.point, Vector3::one() * 0.25, Color::RED);

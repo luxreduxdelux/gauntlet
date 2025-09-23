@@ -106,6 +106,28 @@ impl Physical {
         Ok(())
     }
 
+    pub fn cast_point(
+        &self,
+        point: raylib::math::Vector3,
+        filter: QueryFilter,
+    ) -> Option<(ColliderHandle, Collider)> {
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.rigid_body_set,
+            &self.collider_set,
+            filter,
+        );
+
+        if let Some(last) = query_pipeline
+            .intersect_point(point![point.x, point.y, point.z])
+            .last()
+        {
+            return Some((last.0, last.1.clone()));
+        }
+
+        None
+    }
+
     pub fn cast_ray(
         &self,
         ray: raylib::math::Ray,
@@ -254,6 +276,24 @@ impl Physical {
     ) -> anyhow::Result<()> {
         let handle = self.get_collider_mut(handle)?;
         handle.set_sensor(sensor);
+
+        Ok(())
+    }
+
+    pub fn set_collider_group(
+        &mut self,
+        handle: ColliderHandle,
+        group: InteractionGroups,
+    ) -> anyhow::Result<()> {
+        let handle = self.get_collider_mut(handle)?;
+        handle.set_collision_groups(group);
+
+        Ok(())
+    }
+
+    pub fn set_collider_data(&mut self, handle: ColliderHandle, data: u128) -> anyhow::Result<()> {
+        let handle = self.get_collider_mut(handle)?;
+        handle.user_data = data;
 
         Ok(())
     }

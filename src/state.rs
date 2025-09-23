@@ -152,7 +152,7 @@ impl<'a> State<'a> {
         context.handle.disable_cursor();
 
         self.layout = None;
-        self.world = Some(World::new(self, context, "data/level/level.json")?);
+        self.world = Some(World::new(self, context, "tutorial")?);
 
         Ok(())
     }
