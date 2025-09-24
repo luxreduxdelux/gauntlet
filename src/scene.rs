@@ -194,11 +194,26 @@ impl<'a> Scene<'a> {
     pub fn active_room(&self, point: Vector3) -> bool {
         if let Some((_, collider)) = self.physical.cast_point(
             point,
-            QueryFilter::default().groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
         ) {
             self.room_list[collider.user_data as usize].visible
         } else {
             false
+        }
+    }
+
+    pub fn active_room_index(&self, point: Vector3) -> Option<usize> {
+        if let Some((_, collider)) = self.physical.cast_point(
+            point,
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+        ) {
+            Some(collider.user_data as usize)
+        } else {
+            None
         }
     }
 
@@ -234,8 +249,6 @@ impl<'a> Scene<'a> {
             }
         }
 
-        println!("{:#?}", self.room_list);
-
         Ok(())
     }
 
@@ -263,7 +276,10 @@ impl<'a> Scene<'a> {
         let model = self.asset.set_model(context, path)?;
         let bound = model.bounding_box();
 
-        let collider = self.physical.new_cuboid((bound.max - bound.min) * 0.5);
+        // TO-DO have a rigid body for level geometry
+        let collider = self
+            .physical
+            .new_cuboid((bound.max - bound.min) * 0.5, None);
         self.physical
             .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
         self.physical.set_collider_sensor(collider, true)?;
@@ -450,8 +466,8 @@ impl<'a> Scene<'a> {
     ) -> anyhow::Result<()> {
         if context.handle.is_window_resized() {
             let size = Vector2::new(
-                context.handle.get_screen_width() as f32,
-                context.handle.get_screen_height() as f32,
+                context.handle.get_screen_width() as f32 / 2.0,
+                context.handle.get_screen_height() as f32 / 2.0,
             );
 
             context
@@ -464,6 +480,8 @@ impl<'a> Scene<'a> {
             )?);
         }
 
+        let scene = { self as *mut Self };
+
         let texture = self.texture.as_mut().unwrap();
         let mut result = Ok(());
 
@@ -472,6 +490,20 @@ impl<'a> Scene<'a> {
                 room.visit = false;
             }
 
+            unsafe {
+                if let Some(room) = (*scene).active_room_index(self.camera_3d.position) {
+                    Room::traverse(
+                        room,
+                        r3d,
+                        &self.view_list,
+                        &mut self.room_list,
+                        &mut self.asset,
+                        true,
+                    );
+                }
+            }
+
+            /*
             for (i, room) in self.room_list.iter().enumerate() {
                 if room.is_camera_inside(self.camera_3d) {
                     Room::traverse(
@@ -485,6 +517,7 @@ impl<'a> Scene<'a> {
                     break;
                 }
             }
+            */
 
             // scene should be in charge of level geometry rendering...?
             result = call(r3d);
@@ -555,9 +588,9 @@ impl<'a> Scene<'a> {
             Color::WHITE,
         );
 
+        /*
         draw.draw_fps(0, 0);
 
-        /*
         for (i, room) in self.room_list.iter().enumerate() {
             draw.draw_text(
                 &format!("{}", room.path),

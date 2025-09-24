@@ -172,11 +172,11 @@ impl Entity for Player {
         world.scene.play_music("data/audio/test.mp3", None)?;
         */
 
-        self.collider =
-            world
-                .scene
-                .physical
-                .new_cuboid_entity(self.point, Self::CUBE_SHAPE, &self.info);
+        self.collider = world.scene.physical.new_cuboid(Self::CUBE_SHAPE, None);
+        world
+            .scene
+            .physical
+            .set_collider_point(self.collider, self.point);
 
         // this has something to do with being stuck on the ground after a dash jump.
         self.character = KinematicCharacterController::default();
@@ -197,7 +197,7 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if draw.is_key_down(KeyboardKey::KEY_TAB) {
+        if true || draw.is_key_down(KeyboardKey::KEY_TAB) {
             world.scene.physical.draw();
         }
 
@@ -261,6 +261,8 @@ impl Entity for Player {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        return Ok(());
+
         let full = Vector2::new(
             draw.get_render_width() as f32,
             draw.get_render_height() as f32,

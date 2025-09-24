@@ -178,7 +178,7 @@ impl<'a> World<'a> {
             }
         }
 
-        self.scene.update();
+        self.scene.update()?;
 
         unsafe {
             for entity in &mut self.entity_list {
@@ -191,7 +191,7 @@ impl<'a> World<'a> {
 
             self.scene.draw_r3d(&mut *context, |draw| {
                 for entity in &mut self.entity_list {
-                    entity.draw_r3d(state, &mut *context, &mut *world).unwrap();
+                    entity.draw_r3d(state, &mut *context, &mut *world)?;
                 }
 
                 Ok(())
@@ -199,7 +199,7 @@ impl<'a> World<'a> {
 
             self.scene.draw_3d(&mut *context, draw, |draw| {
                 for entity in &mut self.entity_list {
-                    entity.draw_3d(state, draw, &mut *world).unwrap();
+                    entity.draw_3d(state, draw, &mut *world)?;
                 }
 
                 Ok(())
@@ -217,15 +217,5 @@ impl<'a> World<'a> {
         }
 
         Ok(())
-    }
-
-    // remove this when raylib-rs has a default function for Camera3D.
-    fn default_camera() -> Camera3D {
-        Camera3D::perspective(
-            Vector3::default(),
-            Vector3::default(),
-            Vector3::default(),
-            f32::default(),
-        )
     }
 }

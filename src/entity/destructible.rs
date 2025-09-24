@@ -48,11 +48,100 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-pub mod destructible;
-pub mod door;
-pub mod implementation;
-pub mod lift;
-pub mod light;
-pub mod player;
-pub mod room;
-pub mod view;
+use crate::entity::implementation::*;
+use crate::state::*;
+use crate::utility::*;
+use crate::world::*;
+
+//================================================================
+
+use rapier3d::prelude::*;
+use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
+
+//================================================================
+
+#[derive(Serialize, Deserialize)]
+pub struct Destructible {
+    point: Vector3,
+    angle: Vector3,
+    #[serde(skip)]
+    collider: ColliderHandle,
+    #[serde(skip)]
+    rigid: RigidBodyHandle,
+    #[serde(skip)]
+    info: EntityInfo,
+}
+
+#[typetag::serde]
+impl Entity for Destructible {
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
+    }
+
+    fn initialize(
+        &mut self,
+        state: &mut State,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/crate.glb")?;
+
+        self.rigid = world.scene.physical.new_rigid_dynamic(self.point);
+        self.collider = world
+            .scene
+            .physical
+            .new_cuboid(Vector3::new(0.5, 0.5, 0.5), Some(self.rigid));
+
+        //world.scene.physical.set_rigid_angle(
+        //    self.rigid,
+        //    Vector4::from_euler(self.angle.y, self.angle.x - 90.0, self.angle.z),
+        //)?;
+
+        Ok(())
+    }
+
+    fn draw_r3d(
+        &mut self,
+        state: &mut State,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        let model = world.scene.asset.get_model("data/video/crate.glb")?;
+        //let point = world.scene.physical.get_rigid_point(self.rigid)?;
+        //let angle = world.scene.physical.get_rigid_angle(self.rigid)?;
+        //let point = raylib::math::Matrix::translate(point.x, point.y, point.z);
+        //let angle = angle.to_matrix();
+        //let transform = angle * point;
+
+        let transform = world.scene.physical.get_rigid_transform(self.rigid)?;
+
+        model.draw_pro(&mut context.r3d, transform);
+
+        Ok(())
+    }
+
+    fn draw_3d(
+        &mut self,
+        _state: &mut State,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn tick(
+        &mut self,
+        _state: &mut State,
+        _handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}

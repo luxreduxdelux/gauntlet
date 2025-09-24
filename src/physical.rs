@@ -189,24 +189,47 @@ impl Physical {
         speed: Vector3,
     ) -> anyhow::Result<EffectiveCharacterMovement> {
         let wish_speed = vector![speed.x, speed.y, speed.z] * World::TIME_STEP;
-        let collider = self.get_collider(collider_handle)?;
+        let mut collision = vec![];
 
-        let query_pipeline = self.broad_phase.as_query_pipeline(
+        let movement = {
+            let collider = self.get_collider(collider_handle)?;
+
+            let query_pipeline = self.broad_phase.as_query_pipeline(
+                self.narrow_phase.query_dispatcher(),
+                &self.rigid_body_set,
+                &self.collider_set,
+                QueryFilter::default()
+                    .exclude_collider(collider_handle)
+                    .exclude_sensors(),
+            );
+
+            character.move_shape(
+                World::TIME_STEP,
+                &query_pipeline,
+                collider.shape(),
+                collider.position(),
+                wish_speed,
+                |event| collision.push(event),
+            )
+        };
+
+        let collider = self.get_collider(collider_handle)?.clone();
+
+        let mut query_pipeline = self.broad_phase.as_query_pipeline_mut(
             self.narrow_phase.query_dispatcher(),
-            &self.rigid_body_set,
-            &self.collider_set,
+            &mut self.rigid_body_set,
+            &mut self.collider_set,
             QueryFilter::default()
                 .exclude_collider(collider_handle)
                 .exclude_sensors(),
         );
 
-        let movement = character.move_shape(
+        character.solve_character_collision_impulses(
             World::TIME_STEP,
-            &query_pipeline,
+            &mut query_pipeline,
             collider.shape(),
-            collider.position(),
-            wish_speed,
-            |_| {},
+            collider.mass(),
+            &collision,
         );
 
         let collider = self.get_collider_mut(collider_handle)?;
@@ -217,29 +240,38 @@ impl Physical {
         Ok(movement)
     }
 
-    pub fn new_cuboid_entity(
+    pub fn new_cuboid(
         &mut self,
-        point: Vector3,
         shape: Vector3,
-        info: &EntityInfo,
+        parent: Option<RigidBodyHandle>,
     ) -> ColliderHandle {
         let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
-            .translation(vector![point.x, point.y, point.z])
-            .user_data(info.index as u128)
             //.active_events(ActiveEvents::COLLISION_EVENTS)
             //.active_collision_types(ActiveCollisionTypes::all())
             .build();
 
-        self.collider_set.insert(collider)
+        if let Some(parent) = parent {
+            self.collider_set
+                .insert_with_parent(collider, parent, &mut self.rigid_body_set)
+        } else {
+            self.collider_set.insert(collider)
+        }
     }
 
-    pub fn new_cuboid(&mut self, shape: Vector3) -> ColliderHandle {
-        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
-            //.active_events(ActiveEvents::COLLISION_EVENTS)
-            //.active_collision_types(ActiveCollisionTypes::all())
+    pub fn new_rigid_fixed(&mut self, point: Vector3) -> RigidBodyHandle {
+        let rigid = RigidBodyBuilder::fixed()
+            .translation(vector![point.x, point.y, point.z])
             .build();
 
-        self.collider_set.insert(collider)
+        self.rigid_body_set.insert(rigid)
+    }
+
+    pub fn new_rigid_dynamic(&mut self, point: Vector3) -> RigidBodyHandle {
+        let rigid = RigidBodyBuilder::dynamic()
+            .translation(vector![point.x, point.y, point.z])
+            .build();
+
+        self.rigid_body_set.insert(rigid)
     }
 
     pub fn get_collider(&self, handle: ColliderHandle) -> anyhow::Result<&Collider> {
@@ -258,12 +290,82 @@ impl Physical {
             )))
     }
 
+    pub fn get_rigid(&self, handle: RigidBodyHandle) -> anyhow::Result<&RigidBody> {
+        self.rigid_body_set
+            .get(handle)
+            .ok_or(anyhow::Error::msg(format!(
+                "Physical::get_rigid(): Could not get rigid body \"{handle:?}\""
+            )))
+    }
+
+    pub fn get_rigid_mut(&mut self, handle: RigidBodyHandle) -> anyhow::Result<&mut RigidBody> {
+        self.rigid_body_set
+            .get_mut(handle)
+            .ok_or(anyhow::Error::msg(format!(
+                "Physical::get_rigid_mut(): Could not get rigid body \"{handle:?}\""
+            )))
+    }
+
+    pub fn get_rigid_point(&mut self, handle: RigidBodyHandle) -> anyhow::Result<Vector3> {
+        let handle = self.get_rigid(handle)?;
+        let point = handle.translation();
+
+        Ok(Vector3::new(point.x, point.y, point.z))
+    }
+
+    pub fn set_rigid_point(
+        &mut self,
+        handle: RigidBodyHandle,
+        point: Vector3,
+    ) -> anyhow::Result<()> {
+        let handle = self.get_rigid_mut(handle)?;
+
+        handle.set_translation(vector![point.x, point.y, point.z], true);
+
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    pub fn get_rigid_transform(&mut self, handle: RigidBodyHandle) -> anyhow::Result<raylib::math::Matrix> {
+        let handle = self.get_rigid(handle)?;
+        let m = handle.position().to_matrix();
+
+        Ok(raylib::math::Matrix {
+            m0: m.m11, m4: m.m12, m8: m.m13, m12: m.m14,
+            m1: m.m21, m5: m.m22, m9: m.m23, m13: m.m24,
+            m2: m.m31, m6: m.m32, m10: m.m33, m14: m.m34,
+            m3: m.m41, m7: m.m42, m11: m.m43, m15: m.m44,
+        })
+    }
+
+    pub fn get_rigid_angle(&mut self, handle: RigidBodyHandle) -> anyhow::Result<Vector4> {
+        let handle = self.get_rigid(handle)?;
+        let angle = handle.rotation();
+
+        Ok(Vector4::new(angle.i, angle.j, angle.k, angle.w))
+    }
+
+    pub fn set_rigid_angle(
+        &mut self,
+        handle: RigidBodyHandle,
+        angle: Vector4,
+    ) -> anyhow::Result<()> {
+        let handle = self.get_rigid_mut(handle)?;
+        let (v, a) = angle.to_axis_angle();
+        let angle = v * a;
+
+        handle.set_rotation(Rotation::new(vector![angle.x, angle.y, angle.z]), true);
+
+        Ok(())
+    }
+
     pub fn set_collider_point(
         &mut self,
         handle: ColliderHandle,
         point: Vector3,
     ) -> anyhow::Result<()> {
         let handle = self.get_collider_mut(handle)?;
+
         handle.set_translation(vector![point.x, point.y, point.z]);
 
         Ok(())

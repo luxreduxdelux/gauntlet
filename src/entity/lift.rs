@@ -90,9 +90,9 @@ impl Entity for Lift {
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.collider = world.scene.physical.new_cuboid(Vector3::new(1.0, 0.25, 1.0));
-        world.scene.physical
-            .set_collider_point(self.collider, self.point)?;
+        //self.collider = world.scene.physical.new_cuboid(Vector3::new(1.0, 0.25, 1.0));
+        //world.scene.physical
+        //    .set_collider_point(self.collider, self.point)?;
 
         world
             .scene
@@ -146,7 +146,10 @@ impl Entity for Lift {
 
         let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
 
-        world.scene.physical.set_collider_point(self.collider, point)?;
+        world
+            .scene
+            .physical
+            .set_collider_point(self.collider, point)?;
 
         Ok(())
     }

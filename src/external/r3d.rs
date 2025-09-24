@@ -22,6 +22,12 @@ impl Into<ffi::Vector3> for Vector3 {
     }
 }
 
+impl Into<ffi::Matrix> for Matrix {
+    fn into(self) -> ffi::Matrix {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl Into<BoundingBox> for ffi::BoundingBox {
     fn into(self) -> BoundingBox {
         BoundingBox {
@@ -94,7 +100,14 @@ impl Handle {
     /// later via set_state.
     pub fn new(resolution: (i32, i32)) -> Self {
         unsafe {
-            ffi::R3D_Init(resolution.0, resolution.1, 0);
+            let mut flag = 0;
+            flag += ffi::R3D_FLAG_FORCE_FORWARD;
+            flag += ffi::R3D_FLAG_NO_FRUSTUM_CULLING;
+            flag += ffi::R3D_FLAG_DEPTH_PREPASS;
+            flag += ffi::R3D_FLAG_8_BIT_NORMALS;
+            flag += ffi::R3D_FLAG_LOW_PRECISION_BUFFERS;
+
+            ffi::R3D_Init(resolution.0, resolution.1, flag);
             ffi::R3D_SetTextureFilter(0);
         }
 
@@ -635,6 +648,12 @@ impl Model {
                 rotationAngle,
                 scale.into(),
             );
+        }
+    }
+
+    pub fn draw_pro(&self, _handle: &mut Handle, transform: Matrix) {
+        unsafe {
+            ffi::R3D_DrawModelPro(&self.inner, transform.into());
         }
     }
 
