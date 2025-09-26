@@ -49,46 +49,35 @@
 */
 
 use crate::entity::implementation::*;
-use crate::scene::*;
 use crate::state::*;
+use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
+use rapier3d::control::KinematicCharacterController;
+use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
 //================================================================
 
 #[derive(Serialize, Deserialize)]
-pub struct ViewNode {
-    point: Vector3,
-    parent: String,
-    #[serde(skip)]
-    info: EntityInfo,
-}
-
-#[typetag::serde]
-impl Entity for ViewNode {
-    fn get_info(&self) -> &EntityInfo {
-        &self.info
-    }
-    fn get_info_mutable(&mut self) -> &mut EntityInfo {
-        &mut self.info
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct ViewParent {
+pub struct Enemy {
     point: Vector3,
     angle: Vector3,
-    name: String,
+    #[serde(skip)]
+    collider: ColliderHandle,
+    #[serde(skip)]
+    character: KinematicCharacterController,
+    #[serde(skip)]
+    animation: Animation,
     #[serde(skip)]
     info: EntityInfo,
 }
 
 #[typetag::serde]
-impl Entity for ViewParent {
+impl Entity for Enemy {
     fn get_info(&self) -> &EntityInfo {
         &self.info
     }
@@ -98,28 +87,89 @@ impl Entity for ViewParent {
 
     fn initialize(
         &mut self,
-        _state: &mut State,
-        _context: &mut Context,
+        state: &mut State,
+        context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        let mut view = View::default();
-        view.point = self.point;
-        view.angle = self.angle;
+        let ctx = context as *mut Context;
 
-        for entity in &mut world.entity_list {
-            if let Some(view_node) = entity.as_any_mut().downcast_mut::<ViewNode>() {
-                if view_node.parent == self.name {
-                    view.child.push(view_node.point);
-
-                    // TO-DO use entity_detach here.
-                    view_node.info.close = true;
-                }
-            }
+        unsafe {
+            world
+                .scene
+                .asset
+                .set_sound(&*ctx, "data/audio/step_0.wav", 0)?;
+            world
+                .scene
+                .asset
+                .set_sound(&*ctx, "data/audio/step_1.wav", 0)?;
+            world
+                .scene
+                .asset
+                .set_sound(&*ctx, "data/audio/pistol_0.wav", 0)?;
+            world
+                .scene
+                .asset
+                .set_sound(&*ctx, "data/audio/pistol_1.wav", 0)?;
+            world
+                .scene
+                .asset
+                .set_sound(&*ctx, "data/audio/fall.wav", 0)?;
         }
 
-        world.scene.view_list.push(view);
+        let model = world
+            .scene
+            .asset
+            .set_model(context, "data/video/test.glb")?;
 
-        self.info.close = true;
+        self.collider = world
+            .scene
+            .physical
+            .new_cuboid(Vector3::new(0.25, 0.50, 0.25), None);
+        world
+            .scene
+            .physical
+            .set_collider_point(self.collider, self.point)?;
+
+        self.character = KinematicCharacterController::default();
+        self.character.snap_to_ground = None;
+
+        self.animation = Animation::new(model, "Death01", 60.0);
+
+        Ok(())
+    }
+
+    fn draw_r3d(
+        &mut self,
+        state: &mut State,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        let model = world.scene.asset.get_model("data/video/test.glb")?;
+
+        if context.handle.is_key_pressed(KeyboardKey::KEY_ONE) {
+            self.animation = Animation::new(model, "Jog_Fwd_Loop", 60.0);
+        } else if context.handle.is_key_pressed(KeyboardKey::KEY_TWO) {
+            self.animation = Animation::new(model, "Pistol_Reload", 60.0);
+        } else if context.handle.is_key_pressed(KeyboardKey::KEY_THREE) {
+            self.animation = Animation::new(model, "Death01", 60.0);
+        }
+
+        model.model.draw(
+            &mut context.r3d,
+            self.point - Vector3::new(0.0, 0.5, 0.0),
+            1.0,
+        );
+
+        Ok(())
+    }
+
+    fn tick(
+        &mut self,
+        state: &mut State,
+        handle: &mut RaylibHandle,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        self.animation.update(state, world, "data/video/test.glb", self.point)?;
 
         Ok(())
     }

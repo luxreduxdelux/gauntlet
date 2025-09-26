@@ -83,33 +83,18 @@ impl<'a> World<'a> {
         let file = std::fs::read_to_string(file)?;
         let mut file: Self = serde_json::from_str(&file)?;
 
-        /*
-        for x in 0..2 {
-            file.scene
-                .add_room(context, &format!("data/level/level_{x}.glb"))?;
-        }
-        */
-
         for level in &file.level {
             file.scene
-                .add_room(context, &format!("data/level/{path}/{level}"))?;
+                .room_add(context, &format!("data/level/{path}/{level}"))?;
         }
-
-        file.scene.asset.set_shader(
-            context,
-            "screen",
-            Some("data/shader/base.vs"),
-            Some("data/shader/screen.fs"),
-        )?;
 
         unsafe {
             let world = &mut file as *mut Self;
             let ctx = context as *mut Context;
 
             for entity in &mut file.entity_list {
-                let info = entity.get_info_mutable();
-                info.index = file.entity_index;
                 file.entity_index += 1;
+                entity.get_info_mutable().index = file.entity_index - 1;
                 entity.initialize(state, &mut *ctx, &mut *world)?;
             }
         }
@@ -126,18 +111,13 @@ impl<'a> World<'a> {
         self.entity_attach.push(Box::new(entity));
     }
 
-    pub fn entity_detach<T: Entity>(&mut self, entity: &T) {
-        //
-    }
+    pub fn entity_detach<T: Entity>(&mut self, entity: &T) {}
 
-    pub fn entity_find(&mut self, index: usize) -> Option<&mut Box<(dyn Entity)>> {
-        for entity in &mut self.entity_list {
-            if entity.get_info().index == index {
-                return Some(entity);
-            }
-        }
-
-        None
+    pub fn entity_find(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
+        self.entity_list
+            .iter_mut()
+            .find(|entity| entity.get_info().index == index)
+            .map(|v| v as _)
     }
 
     pub fn main(
@@ -147,8 +127,9 @@ impl<'a> World<'a> {
         context: &mut Context,
     ) -> anyhow::Result<()> {
         let world = self as *mut Self;
+        let pause = state.layout.is_some();
 
-        if state.layout.is_none() {
+        if !pause {
             let frame_time = context.handle.get_frame_time().min(0.25);
 
             self.step += frame_time;
@@ -159,6 +140,9 @@ impl<'a> World<'a> {
                 // improve this API, please.
                 if let Ok(lock) = &self.scene.physical.collision_handler.collision_list.lock() {
                     for event in lock.iter() {
+                        // for each event, find entity A and B's rigid body. then, get their user data.
+                        // the user data is the entity's index. find the entity, then call each other's "touch" method
+                        // with each other as the "other" argument.
                         println!("{event:?}");
                     }
                 }
@@ -169,7 +153,10 @@ impl<'a> World<'a> {
                     }
                 }
 
-                self.entity_list.append(&mut self.entity_attach);
+                if !self.entity_attach.is_empty() {
+                    self.entity_list.append(&mut self.entity_attach);
+                }
+
                 self.entity_list
                     .retain_mut(|entity| !entity.get_info().close);
 
@@ -178,38 +165,34 @@ impl<'a> World<'a> {
             }
         }
 
-        self.scene.update()?;
-
-        unsafe {
-            for entity in &mut self.entity_list {
-                entity.main(state, draw, &mut *world)?;
-            }
-        }
+        self.scene.update(state)?;
 
         unsafe {
             let context = context as *mut Context;
 
-            self.scene.draw_r3d(&mut *context, |draw| {
-                for entity in &mut self.entity_list {
-                    entity.draw_r3d(state, &mut *context, &mut *world)?;
-                }
+            if !pause {
+                self.scene.draw_r3d(&mut *context, |_| {
+                    for entity in &mut self.entity_list {
+                        entity.draw_r3d(state, &mut *context, &mut *world)?;
+                    }
 
-                Ok(())
-            })?;
+                    Ok(())
+                })?;
 
-            self.scene.draw_3d(&mut *context, draw, |draw| {
-                for entity in &mut self.entity_list {
-                    entity.draw_3d(state, draw, &mut *world)?;
-                }
+                self.scene.draw_3d(&mut *context, draw, |draw| {
+                    for entity in &mut self.entity_list {
+                        entity.draw_3d(state, draw, &mut *world)?;
+                    }
 
-                Ok(())
-            })?;
-        }
+                    Ok(())
+                })?;
+            }
 
-        unsafe {
             self.scene.draw_2d(&mut *context, draw, |draw| {
-                for entity in &mut self.entity_list {
-                    entity.draw_2d(state, draw, &mut *world)?;
+                if !pause {
+                    for entity in &mut self.entity_list {
+                        entity.draw_2d(state, draw, &mut *world)?;
+                    }
                 }
 
                 Ok(())

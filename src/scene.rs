@@ -48,9 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use rapier3d::parry;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
+use std::collections::HashMap;
 
 //================================================================
 
@@ -58,121 +58,9 @@ use crate::asset::*;
 use crate::external::r3d::*;
 use crate::physical::*;
 use crate::state::*;
-use crate::utility::Direction;
+use crate::utility::*;
 
 //================================================================
-
-#[derive(Default, Debug, Clone)]
-pub struct Room {
-    pub point: Vector3,
-    pub angle: Vector3,
-    pub scale: Vector3,
-    pub bound: BoundingBox,
-    pub path: String,
-    pub view: Vec<usize>,
-    pub visible: bool,
-    pub visit: bool,
-}
-
-impl<'a> Room {
-    fn traverse(
-        room_index: usize,
-        handle: &mut Handle,
-        view_list: &[View],
-        room_list: &mut [Room],
-        asset: &mut Asset<'a>,
-        inside: bool,
-    ) {
-        let current_room = &mut room_list[room_index];
-
-        if current_room.visit {
-            return;
-        }
-
-        current_room.visit = true;
-
-        if current_room.is_visible(handle, view_list) || inside {
-            current_room.visible = true;
-
-            let model = asset.get_model(&current_room.path).unwrap();
-            model.draw(handle, Vector3::zero(), 1.0);
-
-            let c_r_view = current_room.view.clone();
-
-            for view in &c_r_view {
-                for room in &view_list[*view].room {
-                    Self::traverse(*room, handle, view_list, room_list, asset, false);
-                }
-            }
-        } else {
-            current_room.visible = false;
-        }
-    }
-
-    fn is_camera_inside(&self, camera: Camera3D) -> bool {
-        let shape = Cuboid::new(vector![self.scale.x, self.scale.y, self.scale.z]);
-
-        shape.contains_point(
-            &Isometry::new(
-                vector![self.point.x, self.point.y, self.point.z],
-                vector![0.0, 0.0, 0.0],
-            ),
-            &point![camera.position.x, camera.position.y, camera.position.z],
-        )
-    }
-
-    fn is_visible(&self, handle: &Handle, view_list: &[View]) -> bool {
-        if self.view.is_empty() {
-            return true;
-        }
-
-        for view in &self.view {
-            if view_list[*view].is_visible(handle) {
-                return true;
-            }
-        }
-
-        false
-    }
-}
-
-// TO-DO a view portal should be one of two classes:
-// - toggle portal (a door): only check if we are set to enable or disable.
-// - camera portal (a window): check if our children nodes are visible.
-#[derive(Default, Debug, Clone)]
-pub struct View {
-    pub point: Vector3,
-    pub angle: Vector3,
-    pub child: Vec<Vector3>,
-    pub visible: bool,
-    pub room: Vec<usize>,
-}
-
-impl View {
-    fn is_visible(&self, handle: &Handle) -> bool {
-        self.visible
-        /*
-        if !self.visible {
-            return false;
-        }
-
-        for child in &self.child {
-            if handle.is_point_in_frustum(*child) {
-                return true;
-            }
-        }
-
-        false
-        */
-    }
-}
-
-struct Noise {
-    point: Option<Vector3>,
-    range: f32,
-    alias: Option<usize>,
-    path: String,
-}
 
 // sound/music manager.
 // portal visibility manager.
@@ -186,12 +74,47 @@ pub struct Scene<'a> {
     music_list: Vec<Noise>,
     pub room_list: Vec<Room>,
     pub view_list: Vec<View>,
+    pub path_list: Vec<Path>,
+    pub path_hash: HashMap<(i32, i32, i32), Vec<usize>>,
     pub physical: Physical,
+    pub room_rigid: Option<RigidBodyHandle>,
     pub pause: bool,
 }
 
 impl<'a> Scene<'a> {
-    pub fn active_room(&self, point: Vector3) -> bool {
+    pub fn path_add(&mut self, point: Vector3) {
+        self.path_list.push(Path { point });
+        let point = (
+            snap_to_grid(point.x, 16.0) as i32,
+            snap_to_grid(point.y, 16.0) as i32,
+            snap_to_grid(point.z, 16.0) as i32,
+        );
+        let entry = self.path_hash.entry(point).or_default();
+        entry.push(self.path_list.len() - 1);
+    }
+
+    fn path_closest(&self, point: Vector3, path_list: &'a [Path]) -> Option<&'a Path> {
+        let mut path_away = f32::MAX;
+        let mut path_pick = None;
+
+        for path in path_list {
+            let away = point.distance_to(path.point);
+
+            if away <= path_away {
+                path_away = away;
+                path_pick = Some(path)
+            }
+        }
+
+        path_pick
+    }
+
+    //pub fn path_calculate(&mut self, point_a: Vector3, point_b: Vector3) -> Vec<Path> {
+    //    let path_o = Vec::with_capacity(self.path_list.len());
+    //    let path_c = Vec::with_capacity(self.path_list.len());
+    //}
+
+    pub fn room_active(&self, point: Vector3) -> bool {
         if let Some((_, collider)) = self.physical.cast_point(
             point,
             QueryFilter::default()
@@ -204,7 +127,7 @@ impl<'a> Scene<'a> {
         }
     }
 
-    pub fn active_room_index(&self, point: Vector3) -> Option<usize> {
+    pub fn room_active_index(&self, point: Vector3) -> Option<usize> {
         if let Some((_, collider)) = self.physical.cast_point(
             point,
             QueryFilter::default()
@@ -224,6 +147,13 @@ impl<'a> Scene<'a> {
                 .load_render_texture(&context.thread, 1024, 768)?,
         );
 
+        self.asset.set_shader(
+            context,
+            "screen",
+            Some("data/shader/base.vs"),
+            Some("data/shader/screen.fs"),
+        )?;
+
         self.camera_3d =
             Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
 
@@ -234,7 +164,7 @@ impl<'a> Scene<'a> {
                 let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
 
                 let model = self.asset.get_model(&room.path)?;
-                let bound = model.bounding_box();
+                let bound = model.model.bounding_box();
 
                 let hit_f = bound.get_ray_collision_box(direction_f);
                 let hit_b = bound.get_ray_collision_box(direction_b);
@@ -252,34 +182,49 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn pause(&mut self) -> anyhow::Result<()> {
-        self.pause = true;
+    pub fn set_pause(&mut self, pause: bool) -> anyhow::Result<()> {
+        self.pause = pause;
 
         for noise in &self.sound_list {
             let sound = self.asset.get_sound(&noise.path)?;
-            sound.sound.pause();
+            if pause {
+                sound.sound.pause();
+            } else {
+                sound.sound.resume();
+            }
 
             for alias in &sound.alias {
-                alias.pause();
+                if pause {
+                    alias.pause();
+                } else {
+                    alias.resume();
+                }
             }
         }
 
         for noise in &self.music_list {
             let music = self.asset.get_music(&noise.path)?;
-            music.pause_stream();
+            if pause {
+                music.pause_stream();
+            } else {
+                music.resume_stream();
+            }
         }
 
         Ok(())
     }
 
-    pub fn add_room(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
-        let model = self.asset.set_model(context, path)?;
-        let bound = model.bounding_box();
+    pub fn room_add(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        if self.room_rigid.is_none() {
+            self.room_rigid = Some(self.physical.new_rigid_fixed(Vector3::zero()));
+        }
 
-        // TO-DO have a rigid body for level geometry
+        let model = self.asset.set_model(context, path)?;
+        let bound = model.model.bounding_box();
+
         let collider = self
             .physical
-            .new_cuboid((bound.max - bound.min) * 0.5, None);
+            .new_cuboid((bound.max - bound.min) * 0.5, self.room_rigid);
         self.physical
             .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
         self.physical.set_collider_sensor(collider, true)?;
@@ -290,7 +235,7 @@ impl<'a> Scene<'a> {
             InteractionGroups::new(Group::GROUP_32, Group::GROUP_32),
         )?;
 
-        self.physical.new_model(model)?;
+        self.physical.new_model(&model.model, self.room_rigid)?;
 
         self.room_list.push(Room {
             point: (bound.min + bound.max) * 0.5,
@@ -306,16 +251,10 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn add_view(
-        &mut self,
-        point: Vector3,
-        angle: Vector3,
-        child: Vec<Vector3>,
-    ) -> anyhow::Result<usize> {
+    pub fn view_add(&mut self, point: Vector3, angle: Vector3) -> anyhow::Result<usize> {
         let mut view = View::default();
         view.point = point;
         view.angle = angle;
-        view.child = child;
         view.visible = false;
 
         let index = self.view_list.len();
@@ -325,37 +264,30 @@ impl<'a> Scene<'a> {
         Ok(index)
     }
 
-    pub fn resume(&mut self) -> anyhow::Result<()> {
-        self.pause = false;
-
-        for noise in &self.sound_list {
-            let sound = self.asset.get_sound(&noise.path)?;
-            sound.sound.resume();
-
-            for alias in &sound.alias {
-                alias.resume();
-            }
-        }
-
-        for noise in &self.music_list {
-            let music = self.asset.get_music(&noise.path)?;
-            music.resume_stream();
-        }
-
-        Ok(())
-    }
-
-    pub fn play_sound(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
+    pub fn sound_play(
+        &mut self,
+        state: &State,
+        path: &str,
+        point: Option<Vector3>,
+    ) -> anyhow::Result<()> {
         let sound = self.asset.get_sound(path)?;
 
         if sound.sound.is_playing() {
             for (i, alias) in sound.alias.iter().enumerate() {
                 if !alias.is_playing() {
+                    if let Some(point) = point {
+                        let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
+                        alias.set_volume(distance * state.user.volume_sound);
+                        alias.set_pan(pan);
+                    } else {
+                        alias.set_volume(state.user.volume_sound);
+                    }
+
                     alias.play();
 
                     self.sound_list.push(Noise {
                         point,
-                        range: 16.0,
+                        range: 8.0,
                         alias: Some(i),
                         path: path.to_string(),
                     });
@@ -365,11 +297,20 @@ impl<'a> Scene<'a> {
             }
         }
 
+        // TO-DO cull sound if not even audible?
+        if let Some(point) = point {
+            let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
+            sound.sound.set_volume(distance * state.user.volume_sound);
+            sound.sound.set_pan(pan);
+        } else {
+            sound.sound.set_volume(state.user.volume_sound);
+        }
+
         sound.sound.play();
 
         self.sound_list.push(Noise {
             point,
-            range: 16.0,
+            range: 8.0,
             alias: None,
             path: path.to_string(),
         });
@@ -377,13 +318,13 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn play_music(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
+    pub fn music_play(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
         let music = self.asset.get_music(path)?;
         music.play_stream();
 
         self.music_list.push(Noise {
             point,
-            range: 16.0,
+            range: 8.0,
             alias: None,
             path: path.to_string(),
         });
@@ -391,40 +332,27 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    fn calculate_distance_pan(&self, point: Vector3, range: f32) -> (f32, f32) {
-        let distance = (point - self.camera_3d.position).length();
-        let distance = (1.0 - (distance / range)).clamp(0.0, 1.0);
-
-        let direction = (point - self.camera_3d.position).normalized();
-        let y = self
-            .camera_3d
-            .up
-            .cross(self.camera_3d.target - self.camera_3d.position)
-            .normalized();
-        let pan = (y.dot(direction) + 1.0) / 2.0;
-
-        (distance, pan)
-    }
-
-    pub fn update(&mut self) -> anyhow::Result<()> {
+    pub fn update(&mut self, state: &State) -> anyhow::Result<()> {
         if self.pause {
             return Ok(());
         }
 
         for noise in &self.sound_list {
+            let sound = self.asset.get_sound(&noise.path)?;
             if let Some(point) = noise.point {
-                let (distance, pan) = self.calculate_distance_pan(point, noise.range);
-
-                let sound = self.asset.get_sound(&noise.path)?;
+                let (distance, pan) = calculate_distance_pan(self.camera_3d, point, noise.range);
 
                 if let Some(alias) = noise.alias {
                     let alias = sound.alias.get(alias).unwrap();
-                    alias.set_volume(distance);
+                    alias.set_volume(distance * state.user.volume_sound);
                     alias.set_pan(pan);
                 } else {
-                    sound.sound.set_volume(distance);
+                    sound.sound.set_volume(distance * state.user.volume_sound);
                     sound.sound.set_pan(pan);
                 }
+            } else {
+                // TO-DO check with raylib if setting the volume each frame is bad or not?
+                sound.sound.set_volume(state.user.volume_sound);
             }
         }
 
@@ -433,7 +361,7 @@ impl<'a> Scene<'a> {
             music.update_stream();
 
             if let Some(point) = noise.point {
-                let (distance, pan) = self.calculate_distance_pan(point, noise.range);
+                let (distance, pan) = calculate_distance_pan(self.camera_3d, point, noise.range);
 
                 music.set_volume(distance);
                 music.set_pan(pan);
@@ -491,7 +419,7 @@ impl<'a> Scene<'a> {
             }
 
             unsafe {
-                if let Some(room) = (*scene).active_room_index(self.camera_3d.position) {
+                if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
                     Room::traverse(
                         room,
                         r3d,
@@ -502,22 +430,6 @@ impl<'a> Scene<'a> {
                     );
                 }
             }
-
-            /*
-            for (i, room) in self.room_list.iter().enumerate() {
-                if room.is_camera_inside(self.camera_3d) {
-                    Room::traverse(
-                        i,
-                        r3d,
-                        &self.view_list,
-                        &mut self.room_list,
-                        &mut self.asset,
-                        true,
-                    );
-                    break;
-                }
-            }
-            */
 
             // scene should be in charge of level geometry rendering...?
             result = call(r3d);
@@ -540,20 +452,6 @@ impl<'a> Scene<'a> {
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
 
-        /*
-        for room in &self.room_list {
-            let model = self.asset.get_model(&room.path)?;
-        }
-
-        for view in &self.view_list {
-            draw.draw_cube_v(view.point, Vector3::one() * 0.25, Color::RED);
-
-            for child in &view.child {
-                draw.draw_cube_v(child, Vector3::one() * 0.25, Color::GREEN);
-            }
-        }
-        */
-
         call(&mut draw)
     }
 
@@ -565,9 +463,6 @@ impl<'a> Scene<'a> {
     ) -> anyhow::Result<()> {
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_mode2D(self.camera_2d);
-
-        //let shd = world.scene.asset.get_shader("screen")?;
-        //let mut shd = draw_2d.begin_shader_mode(shd);
 
         draw.draw_texture_pro(
             &texture,
@@ -587,24 +482,6 @@ impl<'a> Scene<'a> {
             0.0,
             Color::WHITE,
         );
-
-        /*
-        draw.draw_fps(0, 0);
-
-        for (i, room) in self.room_list.iter().enumerate() {
-            draw.draw_text(
-                &format!("{}", room.path),
-                8,
-                (8 + 28 * i) as i32,
-                24,
-                if room.visible {
-                    Color::GREEN
-                } else {
-                    Color::RED
-                },
-            );
-        }
-        */
 
         call(&mut draw)
     }
@@ -631,8 +508,118 @@ impl<'a> Default for Scene<'a> {
             music_list: Vec::default(),
             room_list: Vec::default(),
             view_list: Vec::default(),
+            path_list: Vec::default(),
+            path_hash: HashMap::default(),
+            room_rigid: None,
             physical: Physical::default(),
             pause: bool::default(),
         }
     }
+}
+
+//================================================================
+
+#[derive(Default, Debug, Clone)]
+pub struct Room {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub scale: Vector3,
+    pub bound: BoundingBox,
+    pub path: String,
+    pub view: Vec<usize>,
+    pub visible: bool,
+    pub visit: bool,
+}
+
+impl<'a> Room {
+    fn traverse(
+        room_index: usize,
+        handle: &mut Handle,
+        view_list: &[View],
+        room_list: &mut [Room],
+        asset: &mut Asset<'a>,
+        inside: bool,
+    ) {
+        let current_room = &mut room_list[room_index];
+
+        if current_room.visit {
+            return;
+        }
+
+        current_room.visit = true;
+
+        if current_room.is_visible(handle, view_list) || inside {
+            current_room.visible = true;
+
+            let model = asset.get_model(&current_room.path).unwrap();
+            model.model.draw(handle, Vector3::zero(), 1.0);
+
+            let c_r_view = current_room.view.clone();
+
+            for view in &c_r_view {
+                for room in &view_list[*view].room {
+                    Self::traverse(*room, handle, view_list, room_list, asset, false);
+                }
+            }
+        } else {
+            current_room.visible = false;
+        }
+    }
+
+    fn is_camera_inside(&self, camera: Camera3D) -> bool {
+        let shape = Cuboid::new(vector![self.scale.x, self.scale.y, self.scale.z]);
+
+        shape.contains_point(
+            &Isometry::new(
+                vector![self.point.x, self.point.y, self.point.z],
+                vector![0.0, 0.0, 0.0],
+            ),
+            &point![camera.position.x, camera.position.y, camera.position.z],
+        )
+    }
+
+    fn is_visible(&self, handle: &Handle, view_list: &[View]) -> bool {
+        if self.view.is_empty() {
+            return true;
+        }
+
+        for view in &self.view {
+            if view_list[*view].is_visible(handle) {
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
+//================================================================
+
+#[derive(Default, Debug, Clone)]
+pub struct View {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub visible: bool,
+    pub room: Vec<usize>,
+}
+
+//================================================================
+
+impl View {
+    fn is_visible(&self, handle: &Handle) -> bool {
+        self.visible
+    }
+}
+
+//================================================================
+
+struct Noise {
+    point: Option<Vector3>,
+    range: f32,
+    alias: Option<usize>,
+    path: String,
+}
+
+struct Path {
+    point: Vector3,
 }

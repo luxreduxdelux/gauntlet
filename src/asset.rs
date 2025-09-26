@@ -53,18 +53,14 @@ use crate::state::*;
 //================================================================
 
 use raylib::prelude::*;
+use serde::Deserialize;
 use std::collections::HashMap;
 
 //================================================================
 
-pub struct AssetSound<'a> {
-    pub sound: Sound<'a>,
-    pub alias: Vec<SoundAlias<'a, 'a>>,
-}
-
 #[derive(Default)]
 pub struct Asset<'a> {
-    model: HashMap<String, crate::external::r3d::Model>,
+    model: HashMap<String, AssetModel>,
     texture: HashMap<String, Texture2D>,
     shader: HashMap<String, Shader>,
     sound: HashMap<String, AssetSound<'a>>,
@@ -77,12 +73,16 @@ impl<'a> Asset<'a> {
         &mut self,
         context: &mut Context,
         name: &str,
-    ) -> anyhow::Result<&mut crate::external::r3d::Model> {
+    ) -> anyhow::Result<&mut AssetModel> {
         if self.has_model(name) {
             return self.get_model(name);
         }
 
         let model = crate::external::r3d::Model::new(&mut context.r3d, name);
+        let animation = crate::external::r3d::ModelAnimationList::new(&mut context.r3d, name, 60);
+
+        let name_event: Vec<&str> = name.split(".").collect();
+        let event = AnimationEventMap::new(&format!("{}.animation", name_event[0]))?;
 
         /*
         // create mip-map.
@@ -99,12 +99,19 @@ impl<'a> Asset<'a> {
         }
         */
 
-        self.model.insert(name.to_string(), model);
+        self.model.insert(
+            name.to_string(),
+            AssetModel {
+                model,
+                animation,
+                event,
+            },
+        );
 
         self.get_model(name)
     }
 
-    pub fn get_model(&mut self, name: &str) -> anyhow::Result<&mut crate::external::r3d::Model> {
+    pub fn get_model(&mut self, name: &str) -> anyhow::Result<&mut AssetModel> {
         self.model.get_mut(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_model(): Could not find asset \"{name}\"."
         )))
@@ -274,4 +281,43 @@ impl Drop for Asset<'_> {
     fn drop(&mut self) {
         // TO-DO manually un-load each texture for each model, as raylib does not normally do that.
     }
+}
+
+//================================================================
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum AnimationEvent {
+    Sound { path: String },
+    Custom(HashMap<String, serde_json::Value>),
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct AnimationEventMap {
+    pub map: HashMap<String, HashMap<i32, AnimationEvent>>,
+}
+
+impl AnimationEventMap {
+    fn new(path: &str) -> anyhow::Result<Self> {
+        if std::fs::exists(path)? {
+            let map = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+
+            Ok(Self { map })
+        } else {
+            Ok(Self::default())
+        }
+    }
+}
+
+//================================================================
+
+pub struct AssetModel {
+    pub model: crate::external::r3d::Model,
+    pub animation: crate::external::r3d::ModelAnimationList,
+    pub event: AnimationEventMap,
+}
+
+pub struct AssetSound<'a> {
+    pub sound: Sound<'a>,
+    pub alias: Vec<SoundAlias<'a, 'a>>,
 }

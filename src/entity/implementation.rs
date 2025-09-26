@@ -107,14 +107,6 @@ pub trait Entity: Any {
     ) -> anyhow::Result<()> {
         Ok(())
     }
-    fn main(
-        &mut self,
-        _state: &mut State,
-        _handle: &mut RaylibHandle,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
     fn tick(
         &mut self,
         _state: &mut State,

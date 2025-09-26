@@ -48,7 +48,125 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::asset::*;
+use crate::state::*;
+use crate::world::*;
+
+//================================================================
+
 use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
+
+//================================================================
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct Animation {
+    name: String,
+    rate: f32,
+    frame: f32,
+}
+
+impl Animation {
+    pub fn new(model: &mut AssetModel, name: &str, rate: f32) -> Self {
+        model
+            .model
+            .set_model_animation(model.animation.get_animation(name));
+        model.model.set_animation_frame(0);
+
+        Self {
+            name: name.to_string(),
+            rate,
+            frame: 0.0,
+        }
+    }
+
+    /*
+    pub fn update<
+        F: FnMut(&mut World, &HashMap<String, serde_json::Value>) -> anyhow::Result<()>,
+    >(
+        &mut self,
+        world: &mut World,
+        path: &str,
+        call: Option<F>,
+    ) -> anyhow::Result<()> {
+        let wrl = world as *mut World;
+        let model = world.scene.asset.get_model(path)?;
+
+        if let Some(animation) = model.model.get_model_animation() {
+            let delta = self.frame + World::TIME_STEP * self.rate;
+
+            if (self.frame as i32) < (delta as i32) {
+                let delta = delta as i32 - 1;
+                let frame = model.event.map.get(&self.name);
+                model.model.set_animation_frame(delta);
+
+                if let Some(frame) = frame
+                    && let Some(event) = frame.get(&delta)
+                {
+                    unsafe {
+                        match event {
+                            crate::asset::AnimationEvent::Print { data } => println!("{data}"),
+                            crate::asset::AnimationEvent::Sound { path } => {
+                                println!("{delta} -> {path}");
+                                (*wrl).scene.asset.get_sound(path)?.sound.play();
+                            }
+                            crate::asset::AnimationEvent::Custom(data) => {
+                                if let Some(mut call) = call {
+                                    call(&mut (*wrl), data)?
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            self.frame += World::TIME_STEP * self.rate;
+            self.frame %= animation.get_frame_count() as f32 + 1.0;
+        }
+
+        Ok(())
+    }
+    */
+
+    pub fn update(
+        &mut self,
+        state: &mut State,
+        world: &mut World,
+        path: &str,
+        point: Vector3,
+    ) -> anyhow::Result<()> {
+        let wrl = world as *mut World;
+        let model = world.scene.asset.get_model(path)?;
+
+        if let Some(animation) = model.model.get_model_animation() {
+            let delta = self.frame + World::TIME_STEP * self.rate;
+
+            if (self.frame as i32) < (delta as i32) {
+                let delta = delta as i32 - 1;
+                let frame = model.event.map.get(&self.name);
+                model.model.set_animation_frame(delta);
+
+                if let Some(frame) = frame
+                    && let Some(event) = frame.get(&delta)
+                {
+                    unsafe {
+                        match event {
+                            crate::asset::AnimationEvent::Sound { path } => {
+                                (*wrl).scene.sound_play(state, path, Some(point))?
+                            }
+                            crate::asset::AnimationEvent::Custom(_) => {}
+                        }
+                    }
+                }
+            }
+
+            self.frame += World::TIME_STEP * self.rate;
+            self.frame %= animation.get_frame_count() as f32 + 1.0;
+        }
+
+        Ok(())
+    }
+}
 
 //================================================================
 
@@ -59,6 +177,18 @@ pub struct Direction {
 }
 
 impl Direction {
+    pub fn draw_debug(
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        point: Vector3,
+        angle: Vector3,
+    ) {
+        let direction = Self::new_from_angle(&angle);
+
+        draw.draw_ray(Ray::new(point, direction.x), Color::RED);
+        draw.draw_ray(Ray::new(point, direction.y), Color::GREEN);
+        draw.draw_ray(Ray::new(point, direction.z), Color::BLUE);
+    }
+
     pub fn new_from_angle(angle: &Vector3) -> Self {
         // convert to radian.
         let angle = Vector3::new(
@@ -118,6 +248,10 @@ impl View {
         self.angle += (view.angle - self.angle) * frame * Self::BLEND_ANGLE;
         self.scale += (view.scale - self.scale) * frame * Self::BLEND_SCALE;
     }
+}
+
+pub fn interpolate(a: f32, b: f32, time: f32) -> f32 {
+    a + (b - a) * time
 }
 
 pub fn ease_in_out_cubic(x: f32) -> f32 {
@@ -182,4 +316,18 @@ pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f
     wwv.scale(2.0);
 
     value + wv + wwv
+}
+
+pub fn calculate_distance_pan(camera: Camera3D, point: Vector3, range: f32) -> (f32, f32) {
+    let distance = (point - camera.position).length();
+    let distance = (1.0 - (distance / range)).clamp(0.0, 1.0);
+
+    let direction = (point - camera.position).normalized();
+    let y = camera
+        .up
+        .cross(camera.target - camera.position)
+        .normalized();
+    let pan = (y.dot(direction) + 1.0) / 2.0;
+
+    (distance, pan)
 }

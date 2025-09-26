@@ -50,9 +50,9 @@
 
 pub mod destructible;
 pub mod door;
+pub mod enemy;
 pub mod implementation;
 pub mod lift;
 pub mod light;
 pub mod player;
 pub mod room;
-pub mod view;

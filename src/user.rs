@@ -123,7 +123,7 @@ pub struct User {
     pub move_z_a: Input,
     pub move_z_b: Input,
     pub jump: Input,
-    pub slam: Input,
+    pub push: Input,
     pub pull: Input,
 }
 
@@ -155,7 +155,7 @@ impl Default for User {
                 move_z_a: Input::new_board(KeyboardKey::KEY_A),
                 move_z_b: Input::new_board(KeyboardKey::KEY_D),
                 jump: Input::new_board(KeyboardKey::KEY_SPACE),
-                slam: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT),
+                push: Input::new_mouse(MouseButton::MOUSE_BUTTON_LEFT),
                 pull: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
             }
         }

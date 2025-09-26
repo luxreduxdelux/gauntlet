@@ -9,7 +9,7 @@ use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
 mod ffi {
-    include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+    include!(concat!(env!("OUT_DIR"), "/r3d_bind.rs"));
 }
 
 impl Into<ffi::Vector3> for Vector3 {
@@ -675,6 +675,32 @@ impl Model {
             vector
         }
     }
+
+    pub fn get_model_animation(&self) -> Option<ModelAnimation> {
+        if self.inner.anim.is_null() {
+            None
+        } else {
+            Some(ModelAnimation {
+                inner: self.inner.anim,
+            })
+        }
+    }
+
+    pub fn set_model_animation(&mut self, model_animation: Option<ModelAnimation>) {
+        if let Some(m_a) = model_animation {
+            self.inner.anim = m_a.inner;
+        } else {
+            self.inner.anim = std::ptr::null();
+        }
+    }
+
+    pub fn get_animation_frame(&self) -> i32 {
+        self.inner.animFrame
+    }
+
+    pub fn set_animation_frame(&mut self, frame: i32) {
+        self.inner.animFrame = frame;
+    }
 }
 
 impl Drop for Model {
@@ -685,4 +711,62 @@ impl Drop for Model {
             }
         }
     }
+}
+
+pub struct ModelAnimation {
+    inner: *const ffi::R3D_ModelAnimation,
+}
+
+impl ModelAnimation {
+    pub fn get_frame_count(&self) -> i32 {
+        unsafe { (*self.inner).frameCount }
+    }
+}
+
+pub struct ModelAnimationList {
+    inner: *mut ffi::R3D_ModelAnimation,
+    count: i32,
+}
+
+impl ModelAnimationList {
+    pub fn new(
+        _handle: &mut Handle,
+        file_path: &str,
+        target_frame_rate: i32,
+    ) -> ModelAnimationList {
+        let mut count = 0;
+        let inner = unsafe {
+            ffi::R3D_LoadModelAnimations(
+                rust_to_c_string(file_path).as_ptr(),
+                &mut count,
+                target_frame_rate,
+            )
+        };
+
+        Self { inner, count }
+    }
+
+    pub fn get_animation(&self, name: &str) -> Option<ModelAnimation> {
+        let inner = unsafe {
+            ffi::R3D_GetModelAnimation(self.inner, self.count, rust_to_c_string(name).as_ptr())
+        };
+
+        if inner.is_null() {
+            None
+        } else {
+            Some(ModelAnimation { inner })
+        }
+    }
+}
+
+impl Drop for ModelAnimationList {
+    fn drop(&mut self) {
+        unsafe {
+            ffi::R3D_UnloadModelAnimations(self.inner, self.count);
+        }
+    }
+}
+
+fn rust_to_c_string(text: &str) -> CString {
+    CString::new(text).unwrap()
 }

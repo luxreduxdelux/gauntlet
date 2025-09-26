@@ -80,7 +80,11 @@ pub struct Physical {
 }
 
 impl Physical {
-    pub fn new_model(&mut self, model: &crate::external::r3d::Model) -> anyhow::Result<()> {
+    pub fn new_model(
+        &mut self,
+        model: &crate::external::r3d::Model,
+        parent: Option<RigidBodyHandle>,
+    ) -> anyhow::Result<()> {
         for mesh in model.meshes() {
             let list_vertex = mesh
                 .vertices()
@@ -100,7 +104,12 @@ impl Physical {
 
             let collider = ColliderBuilder::trimesh(list_vertex, list_index)?;
 
-            self.collider_set.insert(collider);
+            if let Some(parent) = parent {
+                self.collider_set
+                    .insert_with_parent(collider, parent, &mut self.rigid_body_set);
+            } else {
+                self.collider_set.insert(collider);
+            }
         }
 
         Ok(())
@@ -366,7 +375,11 @@ impl Physical {
     ) -> anyhow::Result<()> {
         let handle = self.get_collider_mut(handle)?;
 
-        handle.set_translation(vector![point.x, point.y, point.z]);
+        if handle.parent().is_some() {
+            handle.set_translation_wrt_parent(vector![point.x, point.y, point.z]);
+        } else {
+            handle.set_translation(vector![point.x, point.y, point.z]);
+        }
 
         Ok(())
     }

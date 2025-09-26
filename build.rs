@@ -1,6 +1,7 @@
 use std::env;
 use std::path::PathBuf;
 
+// TO-DO extract this out as a separate rust crate.
 fn main() {
     // create R3D bind file.
     let bind = bindgen::Builder::default()
@@ -10,7 +11,7 @@ fn main() {
         .generate()
         .expect("Could not create R3D bind file.");
 
-    let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("bindings.rs");
+    let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("r3d_bind.rs");
     bind.write_to_file(path)
         .expect("Could not write R3D bind file.");
 

@@ -49,7 +49,6 @@
 */
 
 // TO-DO clean up ray/shape casting for entity API
-// TO-DO animation event system
 // TO-DO AI pathing system
 // TO-DO level generation system
 // TO-DO look into creating own custom model format for level model/entity model
@@ -88,7 +87,7 @@ fn main() -> anyhow::Result<()> {
             "A fatal error has ocurred. The file \"panic_{time}\" has been written to your game's root directory."
         ));
 
-        eprintln!("{panic_info}");
+        println!("{panic_info}");
     }));
 
     let mut context = Context::new().unwrap();

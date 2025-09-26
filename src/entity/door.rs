@@ -85,7 +85,7 @@ impl Entity for Door {
 
     fn initialize(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -98,25 +98,14 @@ impl Entity for Door {
             .asset
             .set_model(context, "data/video/door_b.glb")?;
 
-        let direction = Direction::new_from_angle(&self.angle);
-
-        let view_child = [
-            self.point + direction.z * 1.2 + direction.y * 1.2,
-            self.point - direction.z * 1.2 + direction.y * 1.2,
-            self.point + direction.z * 1.2 - direction.y * 1.2,
-            self.point - direction.z * 1.2 - direction.y * 1.2,
-        ];
-
-        self.view = world
-            .scene
-            .add_view(self.point, self.angle, view_child.to_vec())?;
+        self.view = world.scene.view_add(self.point, self.angle)?;
 
         Ok(())
     }
 
     fn draw_r3d(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -129,55 +118,23 @@ impl Entity for Door {
 
         // TO-DO correct model in blender
 
-        model_a.draw_ex(
+        model_a.model.draw_ex(
             &mut context.r3d,
             point_a,
             direction.y,
-            3.14 / 2.0 + self.angle.x.to_radians(),
+            -3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
         );
 
         let model_b = world.scene.asset.get_model("data/video/door_b.glb")?;
 
-        model_b.draw_ex(
+        model_b.model.draw_ex(
             &mut context.r3d,
             point_b,
             direction.y,
-            3.14 / 2.0 + self.angle.x.to_radians(),
+            -3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
         );
-
-        Ok(())
-    }
-
-    fn draw_3d(
-        &mut self,
-        _state: &mut State,
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        let direction = Direction::new_from_angle(&self.angle);
-
-        //draw.draw_ray(Ray::new(self.point, direction.x), Color::RED);
-
-        //draw.draw_cube_v(
-        //    self.point,
-        //    Vector3::new(0.1, 1.2, 1.2) * 2.0,
-        //    Color::new(255, 0, 0, 33),
-        //);
-
-        /*
-        let view_child = [
-            self.point + direction.z * 1.2 + direction.y * 1.2,
-            self.point - direction.z * 1.2 + direction.y * 1.2,
-            self.point + direction.z * 1.2 - direction.y * 1.2,
-            self.point - direction.z * 1.2 - direction.y * 1.2,
-        ];
-
-        for view in view_child {
-            draw.draw_cube_v(view, Vector3::one() * 0.25, Color::RED);
-        }
-        */
 
         Ok(())
     }
@@ -200,7 +157,9 @@ impl Entity for Door {
                 Vector3::new(0.6, 0.6, 0.6),
                 direction.x,
                 3.0,
-                rapier3d::prelude::QueryFilter::default().exclude_sensors(),
+                rapier3d::prelude::QueryFilter::default()
+                    .exclude_rigid_body(world.scene.room_rigid.unwrap())
+                    .exclude_sensors(),
             )
             .is_some();
         let bck = world
@@ -211,7 +170,9 @@ impl Entity for Door {
                 Vector3::new(0.6, 0.6, 0.6),
                 -direction.x,
                 3.0,
-                rapier3d::prelude::QueryFilter::default().exclude_sensors(),
+                rapier3d::prelude::QueryFilter::default()
+                    .exclude_rigid_body(world.scene.room_rigid.unwrap())
+                    .exclude_sensors(),
             )
             .is_some();
 

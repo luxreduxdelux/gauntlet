@@ -112,7 +112,7 @@ impl Entity for Lift {
         let point = self.point + direction.y * ease_in_out_cubic(self.scale) * 2.0;
         let model = world.scene.asset.get_model("data/video/lift.glb")?;
 
-        model.draw(&mut context.r3d, point, 1.0);
+        model.model.draw(&mut context.r3d, point, 1.0);
 
         Ok(())
     }

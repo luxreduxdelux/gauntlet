@@ -49,7 +49,7 @@
 */
 
 use crate::entity::implementation::*;
-use crate::external::r3d::LightType;
+use crate::external::r3d::*;
 use crate::state::*;
 use crate::utility::*;
 use crate::world::*;
@@ -115,7 +115,7 @@ impl Entity for Light {
         _world: &mut World,
     ) -> anyhow::Result<()> {
         if let Some(handle) = &mut self.handle {
-            let active = _world.scene.active_room(self.point);
+            let active = _world.scene.room_active(self.point);
 
             if (active && !handle.is_active()) || (!active && handle.is_active()) {
                 handle.set_active(active);
@@ -131,10 +131,10 @@ impl Entity for Light {
         _handle: &mut RaylibHandle,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        if let Some(handle) = &mut self.handle {
-            if handle.is_active() {
-                handle.update_shadow_map();
-            }
+        if let Some(handle) = &mut self.handle
+            && handle.is_active()
+        {
+            handle.update_shadow_map();
         }
 
         Ok(())

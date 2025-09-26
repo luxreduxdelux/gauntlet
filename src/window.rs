@@ -1313,11 +1313,7 @@ impl Layout {
 
         if state.window.device.escape(draw) {
             if let Some(world) = &mut state.world {
-                if world.scene.pause {
-                    world.scene.resume()?;
-                } else {
-                    world.scene.pause()?;
-                }
+                world.scene.set_pause(world.scene.pause)?;
             }
         }
 
@@ -1636,7 +1632,7 @@ impl Layout {
                 window.action(draw, "move z+", &mut state.user.move_z_a)?;
                 window.action(draw, "move z-", &mut state.user.move_z_b)?;
                 window.action(draw, "jump", &mut state.user.jump)?;
-                window.action(draw, "slam", &mut state.user.slam)?;
+                window.action(draw, "push", &mut state.user.push)?;
                 window.action(draw, "pull", &mut state.user.pull)?;
 
                 Ok(())

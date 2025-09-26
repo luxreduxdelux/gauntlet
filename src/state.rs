@@ -48,7 +48,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::asset::*;
 use crate::external::*;
 use crate::locale::Locale;
 use crate::user::*;
@@ -58,44 +57,6 @@ use crate::world::*;
 //================================================================
 
 use raylib::prelude::*;
-
-pub struct Context {
-    pub r3d: r3d::Handle,
-    pub handle: RaylibHandle,
-    pub thread: RaylibThread,
-    pub audio: RaylibAudio,
-}
-
-impl Context {
-    pub fn new() -> anyhow::Result<Self> {
-        let (mut handle, thread) = raylib::init()
-            .size(1024, 768)
-            .resizable()
-            .title("pwrmttl")
-            .build();
-
-        handle.set_exit_key(None);
-
-        let audio = RaylibAudio::init_audio_device()?;
-        let r3d = r3d::Handle::new((1024, 768));
-
-        Ok(Self {
-            r3d,
-            handle,
-            thread,
-            audio,
-        })
-    }
-
-    pub fn apply_user(&mut self, user: &User) {
-        if user.screen_full {
-            self.handle.set_window_size(1920, 1080);
-            self.handle.toggle_fullscreen();
-        }
-
-        self.handle.set_target_fps(user.screen_rate as u32);
-    }
-}
 
 //================================================================
 
@@ -186,5 +147,46 @@ impl<'a> State<'a> {
         }
 
         Ok(())
+    }
+}
+
+//================================================================
+
+pub struct Context {
+    pub r3d: r3d::Handle,
+    pub handle: RaylibHandle,
+    pub thread: RaylibThread,
+    pub audio: RaylibAudio,
+}
+
+impl Context {
+    pub fn new() -> anyhow::Result<Self> {
+        let (mut handle, thread) = raylib::init()
+            .size(1024, 768)
+            .resizable()
+            .title("pwrmttl")
+            .build();
+
+        handle.set_exit_key(None);
+        handle.set_trace_log(TraceLogLevel::LOG_ERROR);
+
+        let audio = RaylibAudio::init_audio_device()?;
+        let r3d = r3d::Handle::new((1024, 768));
+
+        Ok(Self {
+            r3d,
+            handle,
+            thread,
+            audio,
+        })
+    }
+
+    pub fn apply_user(&mut self, user: &User) {
+        if user.screen_full {
+            self.handle.set_window_size(1920, 1080);
+            self.handle.toggle_fullscreen();
+        }
+
+        self.handle.set_target_fps(user.screen_rate as u32);
     }
 }
