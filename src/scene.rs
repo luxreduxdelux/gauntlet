@@ -48,9 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use hashbrown::HashMap;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
-use std::collections::HashMap;
 
 //================================================================
 
@@ -62,9 +62,8 @@ use crate::utility::*;
 
 //================================================================
 
-// sound/music manager.
-// portal visibility manager.
-// level geometry manager.
+// TO-DO: been told by raylib contributor to use another audio solution for
+// spacialization and better audio management, research another library.
 pub struct Scene<'a> {
     pub asset: Asset<'a>,
     pub camera_3d: Camera3D,
@@ -72,6 +71,7 @@ pub struct Scene<'a> {
     texture: Option<RenderTexture2D>,
     sound_list: Vec<Noise>,
     music_list: Vec<Noise>,
+    pub light_list: Vec<Light>,
     pub room_list: Vec<Room>,
     pub view_list: Vec<View>,
     pub path_list: Vec<Path>,
@@ -127,6 +127,21 @@ impl<'a> Scene<'a> {
         }
     }
 
+    pub fn room_active_box(&self, point: Vector3, angle: Vector3, shape: Vector3) -> bool {
+        if let Some((_, collider)) = self.physical.intersect_cuboid(
+            point,
+            angle,
+            shape,
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+        ) {
+            self.room_list[collider.user_data as usize].visible
+        } else {
+            false
+        }
+    }
+
     pub fn room_active_index(&self, point: Vector3) -> Option<usize> {
         if let Some((_, collider)) = self.physical.cast_point(
             point,
@@ -164,7 +179,7 @@ impl<'a> Scene<'a> {
                 let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
 
                 let model = self.asset.get_model(&room.path)?;
-                let bound = model.model.bounding_box();
+                let bound = model.model.get_bounding_box();
 
                 let hit_f = bound.get_ray_collision_box(direction_f);
                 let hit_b = bound.get_ray_collision_box(direction_b);
@@ -216,11 +231,11 @@ impl<'a> Scene<'a> {
 
     pub fn room_add(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
         if self.room_rigid.is_none() {
-            self.room_rigid = Some(self.physical.new_rigid_fixed(Vector3::zero()));
+            self.room_rigid = Some(self.physical.new_rigid_fixed());
         }
 
         let model = self.asset.set_model(context, path)?;
-        let bound = model.model.bounding_box();
+        let bound = model.model.get_bounding_box();
 
         let collider = self
             .physical
@@ -416,18 +431,27 @@ impl<'a> Scene<'a> {
         context.r3d.render_ex(self.camera_3d, texture, |r3d| {
             for room in &mut self.room_list {
                 room.visit = false;
+                room.visible = false;
             }
 
             unsafe {
-                if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
-                    Room::traverse(
-                        room,
-                        r3d,
-                        &self.view_list,
-                        &mut self.room_list,
-                        &mut self.asset,
-                        true,
-                    );
+                // HACK: menu view isn't working, i assume it's we don't have any view node?
+                if self.view_list.is_empty() {
+                    for room in &self.room_list {
+                        let model = self.asset.get_model(&room.path).unwrap();
+                        model.model.draw(r3d, Vector3::zero(), 1.0);
+                    }
+                } else {
+                    if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
+                        Room::traverse(
+                            room,
+                            r3d,
+                            &self.view_list,
+                            &mut self.room_list,
+                            &mut self.asset,
+                            true,
+                        );
+                    }
                 }
             }
 
@@ -451,6 +475,10 @@ impl<'a> Scene<'a> {
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
+
+        draw.draw_cube_v(Vector3::zero(), Vector3::one(), Color::RED);
+
+        //self.physical.draw();
 
         call(&mut draw)
     }
@@ -483,6 +511,8 @@ impl<'a> Scene<'a> {
             Color::WHITE,
         );
 
+        draw.draw_text(&draw.get_fps().to_string(), 8, 8, 32, Color::GREEN);
+
         call(&mut draw)
     }
 }
@@ -492,9 +522,9 @@ impl<'a> Default for Scene<'a> {
         Self {
             asset: Asset::default(),
             camera_3d: Camera3D::perspective(
-                Vector3::zero(),
-                Vector3::zero(),
-                Vector3::zero(),
+                Vector3::default(),
+                Vector3::default(),
+                Vector3::default(),
                 f32::default(),
             ),
             camera_2d: Camera2D {
@@ -506,6 +536,7 @@ impl<'a> Default for Scene<'a> {
             texture: None,
             sound_list: Vec::default(),
             music_list: Vec::default(),
+            light_list: Vec::default(),
             room_list: Vec::default(),
             view_list: Vec::default(),
             path_list: Vec::default(),

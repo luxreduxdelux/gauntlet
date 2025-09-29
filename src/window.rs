@@ -50,7 +50,6 @@
 
 // TO-DO key glyph at bottom of screen.
 
-use crate::locale::Locale;
 use crate::scene::*;
 use crate::state::*;
 use crate::user::*;
@@ -58,412 +57,12 @@ use crate::utility::*;
 
 //================================================================
 
+use hashbrown::HashMap;
 use raylib::prelude::*;
-use std::collections::HashMap;
 use std::f32;
 use std::fmt::Display;
 
 //================================================================
-
-#[derive(PartialEq, Copy, Clone, Default)]
-pub enum Device {
-    Board {
-        index: usize,
-    },
-    #[default]
-    Mouse,
-    Pad {
-        index: usize,
-        stick: f32,
-    },
-}
-
-#[derive(PartialEq)]
-enum DeviceResponse {
-    Accept,
-    Cancel,
-    SideA,
-    SideB,
-}
-
-impl Device {
-    const BOARD_DEVICE_RESPONSE: [(DeviceResponse, KeyboardKey); 4] = [
-        (DeviceResponse::Accept, KeyboardKey::KEY_ENTER),
-        (DeviceResponse::Cancel, KeyboardKey::KEY_ESCAPE),
-        (DeviceResponse::SideA, KeyboardKey::KEY_LEFT),
-        (DeviceResponse::SideB, KeyboardKey::KEY_RIGHT),
-    ];
-    const MOUSE_DEVICE_RESPONSE: [(DeviceResponse, MouseButton); 2] = [
-        (DeviceResponse::Accept, MouseButton::MOUSE_BUTTON_LEFT),
-        (DeviceResponse::Cancel, MouseButton::MOUSE_BUTTON_RIGHT),
-    ];
-    const PAD_DEVICE_RESPONSE: [(DeviceResponse, GamepadButton); 4] = [
-        (
-            DeviceResponse::Accept,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
-        ),
-        (
-            DeviceResponse::Cancel,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
-        ),
-        (
-            DeviceResponse::SideA,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
-        ),
-        (
-            DeviceResponse::SideB,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
-        ),
-    ];
-
-    fn escape(&self, handle: &RaylibHandle) -> bool {
-        match self {
-            Device::Board { .. } => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
-            Device::Mouse => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
-            Device::Pad { .. } => {
-                handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT)
-            }
-        }
-    }
-
-    fn draw_glyph_response(
-        window: &mut Window,
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        point: Vector2,
-        label: &str,
-        device_response: DeviceResponse,
-    ) -> anyhow::Result<()> {
-        let point = Vector2::new(point.x, point.y + draw.get_screen_height() as f32 - 64.0);
-
-        let mut draw_call = |window: &mut Window,
-                             point: Vector2,
-                             texture: &str,
-                             label: &str|
-         -> anyhow::Result<()> {
-            let texture = window.scene.asset.get_texture(texture)?;
-
-            draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
-
-            Window::font_draw(
-                draw,
-                window.font_label()?,
-                label,
-                point + Vector2::new(56.0, 8.0),
-                Color::WHITE,
-            );
-
-            Ok(())
-        };
-
-        match window.device {
-            Device::Board { .. } => {
-                let key = match device_response {
-                    DeviceResponse::Accept => "ENTER",
-                    DeviceResponse::Cancel => "ESCAPE",
-                    _ => "<- | ->",
-                };
-
-                Window::font_draw(
-                    draw,
-                    window.font_label()?,
-                    &format!("[{key}] {label}"),
-                    point + Vector2::new(0.0, 8.0),
-                    Color::WHITE,
-                );
-            }
-            Device::Mouse => match device_response {
-                DeviceResponse::Accept => {
-                    draw_call(window, point, "data/video/glyph/mouse/button_l.png", label)?;
-                }
-                DeviceResponse::Cancel => {
-                    draw_call(window, point, "data/video/glyph/mouse/button_r.png", label)?;
-                }
-                _ => {
-                    draw_call(window, point, "data/video/glyph/mouse/wheel_u.png", "")?;
-                    draw_call(
-                        window,
-                        point + Vector2::new(40.0, 0.0),
-                        "data/video/glyph/mouse/wheel_d.png",
-                        label,
-                    )?;
-                }
-            },
-            Device::Pad { .. } => match device_response {
-                DeviceResponse::Accept => {
-                    draw_call(
-                        window,
-                        point,
-                        "data/video/glyph/play_station/button_d.png",
-                        label,
-                    )?;
-                }
-                DeviceResponse::Cancel => {
-                    draw_call(
-                        window,
-                        point,
-                        "data/video/glyph/play_station/button_r.png",
-                        label,
-                    )?;
-                }
-                _ => {
-                    draw_call(window, point, "data/video/glyph/play_station/pad_l.png", "")?;
-                    draw_call(
-                        window,
-                        point + Vector2::new(56.0, 0.0),
-                        "data/video/glyph/play_station/pad_r.png",
-                        label,
-                    )?;
-                }
-            },
-        }
-
-        Ok(())
-    }
-
-    fn is_board(&self) -> bool {
-        matches!(self, Self::Board { .. })
-    }
-
-    fn is_mouse(&self) -> bool {
-        matches!(self, Self::Mouse)
-    }
-
-    fn is_pad(&self) -> bool {
-        matches!(self, Self::Pad { .. })
-    }
-
-    fn poll_change(&self, handle: &mut RaylibHandle) -> Self {
-        let mut new_device = None;
-
-        if handle.get_key_pressed().is_some() {
-            new_device = Some(Self::Board {
-                index: usize::default(),
-            })
-        }
-
-        if matches!(self, Self::Board { .. }) {
-            let delta = handle.get_mouse_delta();
-
-            if delta.length() != 0.0 {
-                new_device = Some(Self::Mouse)
-            }
-        } else {
-            if Input::get_mouse_pressed(handle).is_some() {
-                new_device = Some(Self::Mouse)
-            }
-        }
-
-        if handle.get_gamepad_button_pressed().is_some() {
-            new_device = Some(Self::Pad {
-                index: usize::default(),
-                stick: f32::default(),
-            })
-        }
-
-        if let Some(n_d) = new_device
-            && std::mem::discriminant(&n_d) != std::mem::discriminant(self)
-        {
-            if matches!(n_d, Self::Mouse) {
-                handle.enable_cursor();
-            } else {
-                handle.disable_cursor();
-            }
-
-            n_d
-        } else {
-            *self
-        }
-    }
-
-    fn hover(&self, handle: &RaylibHandle, widget_index: usize, widget_shape: Rectangle) -> bool {
-        match self {
-            Device::Board { index } => *index == widget_index,
-            Device::Mouse => widget_shape.check_collision_point_rec(handle.get_mouse_position()),
-            Device::Pad { index, .. } => *index == widget_index,
-        }
-    }
-
-    fn update_index(&mut self, handle: &mut RaylibHandle, bound: usize) {
-        match self {
-            Device::Board { index } => {
-                if handle.is_key_pressed(KeyboardKey::KEY_UP)
-                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_UP)
-                {
-                    if *index > 0 {
-                        *index -= 1;
-                    } else {
-                        *index = bound - 1;
-                    }
-                }
-
-                if handle.is_key_pressed(KeyboardKey::KEY_DOWN)
-                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_DOWN)
-                {
-                    *index += 1;
-                }
-
-                *index %= bound;
-            }
-            Device::Mouse => {}
-            Device::Pad { index, stick } => {
-                let stick_state =
-                    handle.get_gamepad_axis_movement(0, GamepadAxis::GAMEPAD_AXIS_LEFT_Y);
-
-                if stick_state < -0.1 && *stick >= -0.1 {
-                    if *index > 0 {
-                        *index -= 1;
-                    } else {
-                        *index = bound - 1;
-                    }
-                }
-
-                if stick_state > 0.1 && *stick <= 0.1 {
-                    *index += 1;
-                }
-
-                *stick = stick_state;
-
-                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP) {
-                    if *index > 0 {
-                        *index -= 1;
-                    } else {
-                        *index = bound - 1;
-                    }
-                }
-
-                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN)
-                {
-                    *index += 1;
-                }
-
-                *index %= bound;
-            }
-        }
-    }
-
-    fn response(&self, handle: &RaylibHandle) -> Option<(DeviceResponse, bool)> {
-        match self {
-            Device::Board { .. } => {
-                for (response, key) in Self::BOARD_DEVICE_RESPONSE {
-                    if handle.is_key_pressed(key) || handle.is_key_pressed_repeat(key) {
-                        return Some((response, true));
-                    }
-
-                    if handle.is_key_released(key) {
-                        return Some((response, false));
-                    }
-                }
-
-                None
-            }
-            Device::Mouse => {
-                for (response, key) in Self::MOUSE_DEVICE_RESPONSE {
-                    if handle.is_mouse_button_pressed(key) {
-                        return Some((response, true));
-                    }
-
-                    if handle.is_mouse_button_released(key) {
-                        return Some((response, false));
-                    }
-                }
-
-                let delta = handle.get_mouse_wheel_move();
-
-                if delta > 0.0 {
-                    return Some((DeviceResponse::SideB, true));
-                } else if delta < 0.0 {
-                    return Some((DeviceResponse::SideA, true));
-                }
-
-                None
-            }
-            Device::Pad { .. } => {
-                for (response, key) in Self::PAD_DEVICE_RESPONSE {
-                    if handle.is_gamepad_button_pressed(0, key) {
-                        return Some((response, true));
-                    }
-
-                    if handle.is_gamepad_button_released(0, key) {
-                        return Some((response, false));
-                    }
-
-                    // TO-DO return SideA/SideB with left-stick?
-                }
-
-                None
-            }
-        }
-    }
-}
-
-#[derive(Default)]
-pub struct Response {
-    pub hover: bool,
-    pub focus: bool,
-    pub device: Option<(DeviceResponse, bool)>,
-    pub widget: Widget,
-}
-
-#[derive(Default, Debug, Clone, Copy)]
-pub struct Widget {
-    pub delta: f32,
-    pub hover: bool,
-    pub scroll: f32,
-}
-
-impl Response {
-    fn accept(&self) -> bool {
-        matches!(self.device, Some((DeviceResponse::Accept, true)))
-    }
-
-    fn cancel(&self) -> bool {
-        matches!(self.device, Some((DeviceResponse::Cancel, true)))
-    }
-
-    fn side_a(&self) -> bool {
-        matches!(self.device, Some((DeviceResponse::SideA, true)))
-    }
-
-    fn side_b(&self) -> bool {
-        matches!(self.device, Some((DeviceResponse::SideB, true)))
-    }
-
-    fn new_from_window(handle: &RaylibHandle, window: &mut Window, shape: Rectangle) -> Self {
-        let focus = if let Some(focus) = window.focus
-            && focus == window.index
-        {
-            true
-        } else {
-            false
-        };
-        let hover = window.device.hover(handle, window.index, shape);
-        let hover = (hover && window.focus.is_none()) || focus;
-        let device = if hover {
-            window.device.response(handle)
-        } else {
-            None
-        };
-
-        let widget = window.widget.entry(window.index).or_default();
-
-        if hover {
-            if !widget.hover {
-                widget.hover = true;
-            }
-        } else {
-            if widget.hover {
-                widget.hover = false;
-            }
-        }
-
-        Self {
-            hover,
-            focus,
-            device,
-            widget: *widget,
-        }
-    }
-}
 
 #[derive(Default)]
 pub struct Window<'a> {
@@ -512,6 +111,22 @@ impl<'a> Window<'a> {
                     .set_texture(context, &format!("data/video/glyph/{kind}/{list}"))?;
             }
         }
+
+        self.scene.room_add(context, "data/video/menu.glb")?;
+
+        let mut light = crate::external::r3d::Light::new(
+            &mut context.r3d,
+            crate::external::r3d::LightType::Omnidirectional,
+        );
+
+        light.set_position(Vector3::new(2.0, 0.0, 0.0));
+        light.set_active(true);
+        light.set_specular(0.0);
+        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 4.0);
+        light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
+        light.enable_shadow(256);
+
+        self.scene.initialize(context)?;
 
         self.scene
             .asset
@@ -1285,6 +900,8 @@ impl<'a> Window<'a> {
     }
 }
 
+//================================================================
+
 pub enum Layout {
     Intro,
     Main,
@@ -1317,19 +934,48 @@ impl Layout {
             }
         }
 
-        if let Some(layout) = &mut state.layout {
-            match layout {
-                Layout::Main => Self::main(state, draw),
-                Layout::Zoom => Self::zoom(state, context, draw),
-                Layout::Begin => Self::begin(state, context, draw),
-                Layout::Setup => Self::setup(state, draw),
-                Layout::Close => Self::close(state, draw),
-                _ => Ok(()),
-            }?;
-        } else {
-            if state.window.device.escape(draw) {
-                Self::change_layout(state, Some(Layout::Main));
-                draw.enable_cursor();
+        let pause = state.layout.is_some();
+
+        unsafe {
+            let state_reference = state as *mut State;
+            let ctx_reference = context as *mut Context;
+
+            if pause {
+                state.window.scene.camera_3d = Camera3D::perspective(
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 1.0, 0.0),
+                    Vector3::up(),
+                    90.0,
+                );
+
+                state.window.scene.update(&mut *state_reference)?;
+
+                state.window.scene.draw_r3d(&mut *context, |_| {
+                    //
+                    Ok(())
+                })?;
+
+                state.window.scene.draw_2d(&mut *context, draw, |draw| {
+                    let state = &mut *state_reference;
+                    let context = &mut *ctx_reference;
+
+                    if let Some(layout) = &state.layout {
+                        match layout {
+                            Layout::Main => Self::main(state, draw),
+                            Layout::Zoom => Self::zoom(state, context, draw),
+                            Layout::Begin => Self::begin(state, context, draw),
+                            Layout::Setup => Self::setup(state, draw),
+                            Layout::Close => Self::close(state, draw),
+                            _ => Ok(()),
+                        }?;
+                    }
+                    Ok(())
+                })?;
+            } else {
+                if state.window.device.escape(draw) {
+                    Self::change_layout(state, Some(Layout::Main));
+                    draw.enable_cursor();
+                }
             }
         }
 
@@ -1345,8 +991,6 @@ impl Layout {
             Self::layout_back(state, draw, None)?;
         }
 
-        Self::draw_back(draw, state.world.is_some(), 1.0);
-
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
             target: Vector2::zero(),
@@ -1357,14 +1001,6 @@ impl Layout {
         let mut layout = None;
 
         Window::draw(state, &mut draw, |state, draw| {
-            Self::draw_head_foot(
-                &mut state.window,
-                draw,
-                state.world.is_some(),
-                "pwrmttl",
-                1.0,
-            )?;
-
             state.window.point = Self::INITIAL_POINT;
 
             if state.window.button(draw, "begin")?.accept() {
@@ -1402,8 +1038,6 @@ impl Layout {
             draw.get_render_height() as f32,
         );
 
-        Self::draw_back(draw, state.world.is_some(), scale);
-
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
             target: Vector2::zero(),
@@ -1412,14 +1046,6 @@ impl Layout {
         });
 
         let header = 1.0 - Self::window_time_scale(&state.window);
-
-        Self::draw_head_foot(
-            &mut state.window,
-            &mut draw,
-            state.world.is_some(),
-            "pwrmttl",
-            header,
-        )?;
 
         draw.draw_rectangle_rec(
             Rectangle::new(0.0, 0.0, shape.x, shape.y),
@@ -1477,7 +1103,6 @@ impl Layout {
         }
 
         Self::layout_back(state, draw, Some(Layout::Main))?;
-        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut layout = None;
         let mut accept = false;
@@ -1528,7 +1153,6 @@ impl Layout {
     #[rustfmt::skip]
     fn setup(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
         Self::layout_back(state, draw, Some(Layout::Main))?;
-        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -1540,14 +1164,6 @@ impl Layout {
         let mut layout = None;
 
         Window::draw(state, &mut draw, |state, draw| {
-            Self::draw_head_foot(
-                &mut state.window,
-                draw,
-                state.world.is_some(),
-                "setup",
-                1.0,
-            )?;
-
             state.window.point = Self::INITIAL_POINT;
 
             let y = draw.get_screen_height() as f32 - 200.0;
@@ -1654,7 +1270,6 @@ impl Layout {
 
     fn close(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
         Self::layout_back(state, draw, Some(Layout::Main))?;
-        Self::draw_back(draw, state.world.is_some(), 1.0);
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -1694,104 +1309,412 @@ impl Layout {
 
         Ok(())
     }
+}
 
-    fn draw_back(handle: &mut RaylibDrawHandle, in_game: bool, scale: f32) {
-        if in_game {
-            return;
-        }
+//================================================================
 
-        let time = handle.get_time() as f32 * 0.5;
-        let x = time.sin() * 8.0 * scale;
-        let z = time.cos() * 8.0 * scale;
+#[derive(Default, Debug, Clone, Copy)]
+pub struct Widget {
+    pub delta: f32,
+    pub hover: bool,
+    pub scroll: f32,
+}
 
-        let mut draw = handle.begin_mode3D(Camera3D::perspective(
-            Vector3::new(x, 6.0 * scale, z),
-            Vector3::zero(),
-            Vector3::up(),
-            90.0,
-        ));
+//================================================================
 
-        draw.draw_cube(Vector3::zero(), 4.0, 4.0, 4.0, Color::BLACK);
+#[derive(PartialEq, Copy, Clone, Default)]
+pub enum Device {
+    Board {
+        index: usize,
+    },
+    #[default]
+    Mouse,
+    Pad {
+        index: usize,
+        stick: f32,
+    },
+}
 
-        for r in 0..8 {
-            let p = r as f32 / 8.0;
+impl Device {
+    const BOARD_DEVICE_RESPONSE: [(DeviceResponse, KeyboardKey); 4] = [
+        (DeviceResponse::Accept, KeyboardKey::KEY_ENTER),
+        (DeviceResponse::Cancel, KeyboardKey::KEY_ESCAPE),
+        (DeviceResponse::SideA, KeyboardKey::KEY_LEFT),
+        (DeviceResponse::SideB, KeyboardKey::KEY_RIGHT),
+    ];
+    const MOUSE_DEVICE_RESPONSE: [(DeviceResponse, MouseButton); 2] = [
+        (DeviceResponse::Accept, MouseButton::MOUSE_BUTTON_LEFT),
+        (DeviceResponse::Cancel, MouseButton::MOUSE_BUTTON_RIGHT),
+    ];
+    const PAD_DEVICE_RESPONSE: [(DeviceResponse, GamepadButton); 4] = [
+        (
+            DeviceResponse::Accept,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+        ),
+        (
+            DeviceResponse::Cancel,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
+        ),
+        (
+            DeviceResponse::SideA,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
+        ),
+        (
+            DeviceResponse::SideB,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
+        ),
+    ];
 
-            for i in 0..16 {
-                let t = time * (2.0 + 4.0 * p);
-                let j = (i as f32 / 8.0) * f32::consts::PI;
-                let x = j.sin() * (6.0 + 24.0 * p);
-                let y = t.sin() * (2.0 + 4.00 * p) - (8.0 * p);
-                let z = j.cos() * (6.0 + 24.0 * p);
-
-                draw.draw_cube(
-                    Vector3::new(x, y, z),
-                    1.0,
-                    6.0,
-                    1.0,
-                    Color::new(127, 127, 127, 127),
-                );
+    fn escape(&self, handle: &RaylibHandle) -> bool {
+        match self {
+            Device::Board { .. } => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
+            Device::Mouse => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
+            Device::Pad { .. } => {
+                handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT)
             }
         }
     }
 
-    fn draw_head_foot(
-        window: &Window,
+    fn draw_glyph_response(
+        window: &mut Window,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        in_game: bool,
-        text: &str,
-        scale: f32,
+        point: Vector2,
+        label: &str,
+        device_response: DeviceResponse,
     ) -> anyhow::Result<()> {
-        let screen_size = Vector2::new(
-            draw.get_render_width() as f32,
-            draw.get_render_height() as f32,
-        );
-        let scale = ease_in_out_cubic(scale);
-        let head = Rectangle::new(0.0, -72.0 * (1.0 - scale), screen_size.x, 72.0);
-        let foot = Rectangle::new(0.0, screen_size.y - 72.0 * scale, screen_size.x, 72.0);
-        let full = Rectangle::new(0.0, 0.0, screen_size.x, screen_size.y);
+        let point = Vector2::new(point.x, point.y + draw.get_screen_height() as f32 - 64.0);
 
-        if in_game {
-            draw.draw_rectangle_rec(full, Color::new(0, 0, 0, 127));
+        let mut draw_call = |window: &mut Window,
+                             point: Vector2,
+                             texture: &str,
+                             label: &str|
+         -> anyhow::Result<()> {
+            let texture = window.scene.asset.get_texture(texture)?;
+
+            draw.draw_texture_ex(texture, point, 0.0, 0.5, Color::WHITE);
+
+            Window::font_draw(
+                draw,
+                window.font_label()?,
+                label,
+                point + Vector2::new(56.0, 8.0),
+                Color::WHITE,
+            );
+
+            Ok(())
+        };
+
+        match window.device {
+            Device::Board { .. } => {
+                let key = match device_response {
+                    DeviceResponse::Accept => "ENTER",
+                    DeviceResponse::Cancel => "ESCAPE",
+                    _ => "<- | ->",
+                };
+
+                Window::font_draw(
+                    draw,
+                    window.font_label()?,
+                    &format!("[{key}] {label}"),
+                    point + Vector2::new(0.0, 8.0),
+                    Color::WHITE,
+                );
+            }
+            Device::Mouse => match device_response {
+                DeviceResponse::Accept => {
+                    draw_call(window, point, "data/video/glyph/mouse/button_l.png", label)?;
+                }
+                DeviceResponse::Cancel => {
+                    draw_call(window, point, "data/video/glyph/mouse/button_r.png", label)?;
+                }
+                _ => {
+                    draw_call(window, point, "data/video/glyph/mouse/wheel_u.png", "")?;
+                    draw_call(
+                        window,
+                        point + Vector2::new(40.0, 0.0),
+                        "data/video/glyph/mouse/wheel_d.png",
+                        label,
+                    )?;
+                }
+            },
+            Device::Pad { .. } => match device_response {
+                DeviceResponse::Accept => {
+                    draw_call(
+                        window,
+                        point,
+                        "data/video/glyph/play_station/button_d.png",
+                        label,
+                    )?;
+                }
+                DeviceResponse::Cancel => {
+                    draw_call(
+                        window,
+                        point,
+                        "data/video/glyph/play_station/button_r.png",
+                        label,
+                    )?;
+                }
+                _ => {
+                    draw_call(window, point, "data/video/glyph/play_station/pad_l.png", "")?;
+                    draw_call(
+                        window,
+                        point + Vector2::new(56.0, 0.0),
+                        "data/video/glyph/play_station/pad_r.png",
+                        label,
+                    )?;
+                }
+            },
         }
-        draw.draw_rectangle_rec(head, Color::BLACK);
-        draw.draw_rectangle_rec(foot, Color::BLACK);
-
-        let font = window.font_title()?;
-
-        let sin_a = ((draw.get_time() as f32 * 2.0).sin() * 4.0).min(0.0);
-        let sin_b = (draw.get_time() as f32 * 4.0).sin().max(0.0);
-
-        draw.draw_text_ex(
-            font,
-            text,
-            Vector2::new(16.0, 8.0 + head.y),
-            56.0,
-            4.0,
-            Color::GRAY.lerp(Color::BLACK, sin_b),
-        );
-
-        draw.draw_text_ex(
-            font,
-            text,
-            Vector2::new(16.0 + sin_a, 8.0 + head.y + sin_a),
-            56.0,
-            4.0,
-            Color::WHITE,
-        );
-
-        /*
-        let font = window.font_label()?;
-
-        draw.draw_text_ex(
-            font,
-            State::VERSION,
-            Vector2::new(16.0, 16.0 + foot.y),
-            32.0,
-            4.0,
-            Color::WHITE,
-        );
-        */
 
         Ok(())
+    }
+
+    fn is_board(&self) -> bool {
+        matches!(self, Self::Board { .. })
+    }
+
+    fn is_mouse(&self) -> bool {
+        matches!(self, Self::Mouse)
+    }
+
+    fn is_pad(&self) -> bool {
+        matches!(self, Self::Pad { .. })
+    }
+
+    fn poll_change(&self, handle: &mut RaylibHandle) -> Self {
+        let mut new_device = None;
+
+        if handle.get_key_pressed().is_some() {
+            new_device = Some(Self::Board {
+                index: usize::default(),
+            })
+        }
+
+        if matches!(self, Self::Board { .. }) {
+            let delta = handle.get_mouse_delta();
+
+            if delta.length() != 0.0 {
+                new_device = Some(Self::Mouse)
+            }
+        } else {
+            if Input::get_mouse_pressed(handle).is_some() {
+                new_device = Some(Self::Mouse)
+            }
+        }
+
+        if handle.get_gamepad_button_pressed().is_some() {
+            new_device = Some(Self::Pad {
+                index: usize::default(),
+                stick: f32::default(),
+            })
+        }
+
+        if let Some(n_d) = new_device
+            && std::mem::discriminant(&n_d) != std::mem::discriminant(self)
+        {
+            if matches!(n_d, Self::Mouse) {
+                handle.enable_cursor();
+            } else {
+                handle.disable_cursor();
+            }
+
+            n_d
+        } else {
+            *self
+        }
+    }
+
+    fn hover(&self, handle: &RaylibHandle, widget_index: usize, widget_shape: Rectangle) -> bool {
+        match self {
+            Device::Board { index } => *index == widget_index,
+            Device::Mouse => widget_shape.check_collision_point_rec(handle.get_mouse_position()),
+            Device::Pad { index, .. } => *index == widget_index,
+        }
+    }
+
+    fn update_index(&mut self, handle: &mut RaylibHandle, bound: usize) {
+        match self {
+            Device::Board { index } => {
+                if handle.is_key_pressed(KeyboardKey::KEY_UP)
+                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_UP)
+                {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if handle.is_key_pressed(KeyboardKey::KEY_DOWN)
+                    || handle.is_key_pressed_repeat(KeyboardKey::KEY_DOWN)
+                {
+                    *index += 1;
+                }
+
+                *index %= bound;
+            }
+            Device::Mouse => {}
+            Device::Pad { index, stick } => {
+                let stick_state =
+                    handle.get_gamepad_axis_movement(0, GamepadAxis::GAMEPAD_AXIS_LEFT_Y);
+
+                if stick_state < -0.1 && *stick >= -0.1 {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if stick_state > 0.1 && *stick <= 0.1 {
+                    *index += 1;
+                }
+
+                *stick = stick_state;
+
+                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP) {
+                    if *index > 0 {
+                        *index -= 1;
+                    } else {
+                        *index = bound - 1;
+                    }
+                }
+
+                if handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN)
+                {
+                    *index += 1;
+                }
+
+                *index %= bound;
+            }
+        }
+    }
+
+    fn response(&self, handle: &RaylibHandle) -> Option<(DeviceResponse, bool)> {
+        match self {
+            Device::Board { .. } => {
+                for (response, key) in Self::BOARD_DEVICE_RESPONSE {
+                    if handle.is_key_pressed(key) || handle.is_key_pressed_repeat(key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_key_released(key) {
+                        return Some((response, false));
+                    }
+                }
+
+                None
+            }
+            Device::Mouse => {
+                for (response, key) in Self::MOUSE_DEVICE_RESPONSE {
+                    if handle.is_mouse_button_pressed(key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_mouse_button_released(key) {
+                        return Some((response, false));
+                    }
+                }
+
+                let delta = handle.get_mouse_wheel_move();
+
+                if delta > 0.0 {
+                    return Some((DeviceResponse::SideB, true));
+                } else if delta < 0.0 {
+                    return Some((DeviceResponse::SideA, true));
+                }
+
+                None
+            }
+            Device::Pad { .. } => {
+                for (response, key) in Self::PAD_DEVICE_RESPONSE {
+                    if handle.is_gamepad_button_pressed(0, key) {
+                        return Some((response, true));
+                    }
+
+                    if handle.is_gamepad_button_released(0, key) {
+                        return Some((response, false));
+                    }
+
+                    // TO-DO return SideA/SideB with left-stick?
+                }
+
+                None
+            }
+        }
+    }
+}
+
+//================================================================
+
+#[derive(PartialEq)]
+enum DeviceResponse {
+    Accept,
+    Cancel,
+    SideA,
+    SideB,
+}
+
+//================================================================
+
+#[derive(Default)]
+pub struct Response {
+    pub hover: bool,
+    pub focus: bool,
+    pub device: Option<(DeviceResponse, bool)>,
+    pub widget: Widget,
+}
+
+impl Response {
+    fn accept(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::Accept, true)))
+    }
+
+    fn cancel(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::Cancel, true)))
+    }
+
+    fn side_a(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::SideA, true)))
+    }
+
+    fn side_b(&self) -> bool {
+        matches!(self.device, Some((DeviceResponse::SideB, true)))
+    }
+
+    fn new_from_window(handle: &RaylibHandle, window: &mut Window, shape: Rectangle) -> Self {
+        let focus = if let Some(focus) = window.focus
+            && focus == window.index
+        {
+            true
+        } else {
+            false
+        };
+        let hover = window.device.hover(handle, window.index, shape);
+        let hover = (hover && window.focus.is_none()) || focus;
+        let device = if hover {
+            window.device.response(handle)
+        } else {
+            None
+        };
+
+        let widget = window.widget.entry(window.index).or_default();
+
+        if hover {
+            if !widget.hover {
+                widget.hover = true;
+            }
+        } else {
+            if widget.hover {
+                widget.hover = false;
+            }
+        }
+
+        Self {
+            hover,
+            focus,
+            device,
+            widget: *widget,
+        }
     }
 }

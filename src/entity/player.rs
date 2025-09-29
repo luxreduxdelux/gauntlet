@@ -49,6 +49,9 @@
 */
 
 // interpolate entity point/angle from previous frame to current to smooth out 60tick update rate
+// after hitting the ground with a slam, if SPACE is hit immediately after,
+// - if no movement key is hit, jump up with twice the force
+// - otherwise, move forward
 
 use crate::entity::implementation::*;
 use crate::state::*;
@@ -68,10 +71,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Player {
-    point: Vector3,
-    angle: Vector3,
+    pub point: Vector3,
+    pub angle: Vector3,
     #[serde(skip)]
     speed: Vector3,
+    #[serde(skip)]
+    rigid: RigidBodyHandle,
     #[serde(skip)]
     collider: ColliderHandle,
     #[serde(skip)]
@@ -88,6 +93,8 @@ pub struct Player {
     clash: bool,
     #[serde(skip)]
     shake: f32,
+    #[serde(skip)]
+    zoom: f32,
     #[serde(skip)]
     push: f32,
     #[serde(skip)]
@@ -115,13 +122,18 @@ impl Entity for Player {
         context: &'a mut Context,
         world: &mut World<'a>,
     ) -> anyhow::Result<()> {
-        self.collider = world.scene.physical.new_cuboid(Self::CUBE_SHAPE, None);
-        world
-            .scene
-            .physical
-            .set_collider_point(self.collider, self.point)?;
+        let (rigid, collider) = world.scene.physical.new_rigid_cuboid_fixed(
+            self.point,
+            Vector3::zero(),
+            Self::CUBE_SHAPE,
+            &self.info,
+        )?;
+
+        self.rigid = rigid;
+        self.collider = collider;
 
         self.character = KinematicCharacterController::default();
+        world.player = Some(self.info.index);
 
         self.view = View::new(
             Vector3::up() * 2.0,
@@ -138,12 +150,6 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if draw.is_key_down(KeyboardKey::KEY_TAB) {
-            world.scene.physical.draw();
-        }
-
-        //================================================================
-
         state.user.move_x_a.poll(draw);
         state.user.move_x_b.poll(draw);
         state.user.move_z_a.poll(draw);
@@ -223,6 +229,8 @@ impl Entity for Player {
             Color::BLACK.lerp(Color::new(0, 0, 0, 0), scale),
         );
 
+        //draw.draw_text(&format!("{}", self.speed.y), 8, 8, 32, Color::RED);
+
         Ok(())
     }
 
@@ -236,8 +244,27 @@ impl Entity for Player {
         // TO-DO bounce player off ceiling if bumping head
         // TO-DO fix being able to jump off side of rigid body
         // TO-DO fix snap-to-ground on slope
+        PlayerState::tick(self, state, handle);
 
         self.shake = (self.shake - World::TIME_STEP * self.shake * 4.0).max(0.0);
+        self.zoom = (self.zoom - World::TIME_STEP * self.zoom * 2.0).max(0.0);
+
+        let angle = Direction::new_from_angle(&self.angle);
+
+        let cast = world.scene.physical.cast_ray(
+            world.scene.camera_3d.position,
+            angle.x,
+            8.0,
+            true,
+            Some(self.rigid),
+            QueryFilter::default().exclude_sensors(),
+        );
+
+        if let Some((collider, _)) = cast
+            && let Ok(Some(entity)) = world.entity_from_collider(collider)
+        {
+            println!("{}", entity.typetag_name());
+        }
 
         if state.user.push.down(handle) {
             self.push = (self.push + World::TIME_STEP * 1.5).min(1.0);
@@ -246,15 +273,17 @@ impl Entity for Player {
                 let angle = Direction::new_from_angle(&self.angle);
 
                 let cast = world.scene.physical.cast_ray(
-                    raylib::math::Ray::new(world.scene.camera_3d.position, angle.x),
-                    3.0,
+                    world.scene.camera_3d.position,
+                    angle.x,
+                    2.0,
                     true,
-                    QueryFilter::default()
-                        .exclude_sensors()
-                        .exclude_collider(self.collider),
+                    Some(self.rigid),
+                    QueryFilter::default().exclude_sensors(),
                 );
 
                 if cast.is_some() {
+                    self.shake = self.push * 0.1;
+
                     // TO-DO past a certain threshold, ignore angle on push jump and just push upward anyway?
                     let boost = angle.x * 5.0 * self.push;
 
@@ -264,7 +293,11 @@ impl Entity for Player {
                         self.speed.y = -boost.y;
                         self.speed.z -= boost.z;
                     } else {
-                        self.speed -= boost;
+                        if self.angle.y >= 60.0 {
+                            self.speed.y += 5.0 * self.push;
+                        } else {
+                            self.speed -= boost;
+                        }
                     }
                 } else {
                     if !self.floor {
@@ -273,6 +306,8 @@ impl Entity for Player {
                             self.speed.z = 0.0;
                             self.state = PlayerState::Slam { time: 0.0 };
                         } else {
+                            self.zoom = self.push;
+
                             self.speed += angle.x * 5.0 * self.push;
                         }
                     }
@@ -283,8 +318,6 @@ impl Entity for Player {
         }
 
         //================================================================
-
-        PlayerState::tick(self, state, handle);
 
         let movement =
             world
@@ -300,6 +333,13 @@ impl Entity for Player {
                 movement.translation.z,
             )
         };
+
+        if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
+            world
+                .scene
+                .physical
+                .set_collider_point(self.collider, self.point + self.speed * World::TIME_STEP);
+        }
 
         self.clash = false;
         self.slide = movement.is_sliding_down_slope;
@@ -345,10 +385,10 @@ impl PlayerState {
     const SPEED_MAX: f32 = 8.00;
     const SPEED_RISE: f32 = 4.50;
     const SPEED_FALL: f32 = 8.00;
-    const SPEED_AIR_MIN: f32 = 0.50;
+    const SPEED_AIR_MIN: f32 = 1.0;
     const SPEED_AIR_RISE: f32 = 4.00;
     const SPEED_AIR_FALL: f32 = 8.00;
-    const SPEED_JUMP: f32 = 3.00;
+    const SPEED_JUMP: f32 = 2.75;
 
     fn get_movement_key(handle: &RaylibHandle, key_a: Input, key_b: Input) -> f32 {
         if key_a.down(handle) {
@@ -446,7 +486,7 @@ impl PlayerState {
                 player.speed.y -= 8.0_f32.powf(*time + 1.0) * World::TIME_STEP;
 
                 if player.floor {
-                    let shake = (player.speed.y.abs() / 64.0).min(1.0) * 0.5;
+                    let shake = (player.speed.y.abs() / 64.0).min(1.0) * 0.1;
 
                     player.shake = shake;
                     player.state = Self::Walk { jump: 0.0 }
@@ -478,7 +518,7 @@ impl PlayerState {
                             0.0,
                         ),
                     Vector3::new(0.0, jump * 0.1, tilt),
-                    state.user.screen_field,
+                    state.user.screen_field + player.zoom * 25.0,
                 )
             }
             Self::Slam { .. } => View::new(

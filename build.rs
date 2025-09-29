@@ -30,11 +30,9 @@ fn main() {
         .define("ASSIMP_BUILD_ZLIB", "1")
         .define("BUILD_SHARED_LIBS", "0")
         .define("CMAKE_BUILD_TYPE", "Release")
+        .cxxflag("-DASSIMP_BUILD_NO_M3D_IMPORTER")
         .cxxflag("-O3")
         .build();
-
-    // HACK: this is only here because raylib 5.5.1 is throwing up an error about multiple definition.
-    println!("cargo:rustc-link-arg=-Wl,--allow-multiple-definition");
 
     // list every search path.
     println!("cargo:rustc-link-search=native={}/build", path.display());
@@ -49,7 +47,9 @@ fn main() {
 
     // link R3D.
     println!("cargo:rustc-link-lib=static=r3d");
-    println!("cargo:rustc-link-lib=static=zlibstatic");
     println!("cargo:rustc-link-lib=static=assimp");
+    println!("cargo:rustc-link-lib=static=zlibstatic");
+
+    // TO-DO link with c++ for macOS instead.
     println!("cargo:rustc-link-lib=static=stdc++");
 }

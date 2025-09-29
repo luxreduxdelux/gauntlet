@@ -28,6 +28,24 @@ impl Into<ffi::Matrix> for Matrix {
     }
 }
 
+impl Into<Matrix> for ffi::Matrix {
+    fn into(self) -> Matrix {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl Into<ffi::Transform> for Transform {
+    fn into(self) -> ffi::Transform {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl Into<Transform> for ffi::Transform {
+    fn into(self) -> Transform {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 impl Into<BoundingBox> for ffi::BoundingBox {
     fn into(self) -> BoundingBox {
         BoundingBox {
@@ -100,12 +118,12 @@ impl Handle {
     /// later via set_state.
     pub fn new(resolution: (i32, i32)) -> Self {
         unsafe {
-            let mut flag = 0;
-            flag += ffi::R3D_FLAG_FORCE_FORWARD;
-            flag += ffi::R3D_FLAG_NO_FRUSTUM_CULLING;
-            flag += ffi::R3D_FLAG_DEPTH_PREPASS;
-            flag += ffi::R3D_FLAG_8_BIT_NORMALS;
-            flag += ffi::R3D_FLAG_LOW_PRECISION_BUFFERS;
+            let flag = ffi::R3D_FLAG_BLIT_LINEAR
+                | ffi::R3D_FLAG_FORCE_FORWARD
+                | ffi::R3D_FLAG_NO_FRUSTUM_CULLING
+                | ffi::R3D_FLAG_DEPTH_PREPASS
+                | ffi::R3D_FLAG_8_BIT_NORMALS
+                | ffi::R3D_FLAG_LOW_PRECISION_BUFFERS;
 
             ffi::R3D_Init(resolution.0, resolution.1, flag);
             ffi::R3D_SetTextureFilter(0);
@@ -657,8 +675,22 @@ impl Model {
         }
     }
 
-    pub fn bounding_box(&self) -> BoundingBox {
+    pub fn get_bounding_box(&self) -> BoundingBox {
         self.inner.aabb.into()
+    }
+
+    pub fn get_bone_offsets(&self) -> Vec<Matrix> {
+        unsafe {
+            let vector: Vec<Matrix> = std::slice::from_raw_parts(
+                self.inner.boneOffsets as *const ffi::Matrix,
+                self.inner.boneCount as usize,
+            )
+            .iter()
+            .map(|x| (*x).into())
+            .collect();
+
+            vector
+        }
     }
 
     // TO-DO this should not use a vector...
@@ -720,6 +752,49 @@ pub struct ModelAnimation {
 impl ModelAnimation {
     pub fn get_frame_count(&self) -> i32 {
         unsafe { (*self.inner).frameCount }
+    }
+
+    pub fn get_bone_info(&self) -> &[BoneInfo] {
+        unsafe {
+            std::slice::from_raw_parts(
+                (*self.inner).bones as *const BoneInfo,
+                (*self.inner).boneCount as usize,
+            )
+        }
+    }
+
+    pub fn get_frame_global_poses(&self, frame: usize) -> Vec<Matrix> {
+        unsafe {
+            let array = (*self.inner).frameGlobalPoses;
+            let frame = *(array.wrapping_add(frame));
+
+            let vector: Vec<Matrix> = std::slice::from_raw_parts(
+                frame as *const ffi::Matrix,
+                (*self.inner).boneCount as usize,
+            )
+            .iter()
+            .map(|x| (*x).into())
+            .collect();
+
+            vector
+        }
+    }
+
+    pub fn get_frame_local_poses(&self, frame: usize) -> Vec<Transform> {
+        unsafe {
+            let array = (*self.inner).frameLocalPoses;
+            let frame = *(array.wrapping_add(frame));
+
+            let vector: Vec<Transform> = std::slice::from_raw_parts(
+                frame as *const ffi::Transform,
+                (*self.inner).boneCount as usize,
+            )
+            .iter()
+            .map(|x| (*x).into())
+            .collect();
+
+            vector
+        }
     }
 }
 

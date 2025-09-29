@@ -52,9 +52,9 @@ use crate::state::*;
 
 //================================================================
 
+use hashbrown::HashMap;
 use raylib::prelude::*;
 use serde::Deserialize;
-use std::collections::HashMap;
 
 //================================================================
 
@@ -289,12 +289,12 @@ impl Drop for Asset<'_> {
 #[serde(tag = "type")]
 pub enum AnimationEvent {
     Sound { path: String },
-    Custom(HashMap<String, serde_json::Value>),
+    Custom(std::collections::HashMap<String, serde_json::Value>),
 }
 
 #[derive(Debug, Deserialize, Default)]
 pub struct AnimationEventMap {
-    pub map: HashMap<String, HashMap<i32, AnimationEvent>>,
+    pub map: std::collections::HashMap<String, std::collections::HashMap<i32, AnimationEvent>>,
 }
 
 impl AnimationEventMap {

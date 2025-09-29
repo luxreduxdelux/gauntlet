@@ -49,11 +49,13 @@
 */
 
 use crate::entity::implementation::*;
+use crate::physical::*;
 use crate::scene::*;
 use crate::state::*;
 
 //================================================================
 
+use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::Deserialize;
 
@@ -73,6 +75,8 @@ pub struct World<'a> {
     entity_attach: Vec<Box<dyn Entity>>,
     #[serde(skip)]
     pub scene: Scene<'a>,
+    #[serde(skip)]
+    pub player: Option<usize>,
 }
 
 impl<'a> World<'a> {
@@ -87,6 +91,9 @@ impl<'a> World<'a> {
             file.scene
                 .room_add(context, &format!("data/level/{path}/{level}"))?;
         }
+
+        // entity index 0 is meant for the level's rigid-body.
+        file.entity_index = 1;
 
         unsafe {
             let world = &mut file as *mut Self;
@@ -104,6 +111,21 @@ impl<'a> World<'a> {
         Ok(file)
     }
 
+    pub fn entity_from_collider(
+        &mut self,
+        collider: ColliderHandle,
+    ) -> anyhow::Result<Option<&Box<dyn Entity>>> {
+        let collider = self.scene.physical.get_collider(collider)?;
+
+        if let Some(parent) = collider.parent()
+            && let Ok(rigid) = self.scene.physical.get_rigid(parent)
+        {
+            return Ok(self.entity_find(rigid.user_data as usize));
+        }
+
+        Ok(None)
+    }
+
     pub fn entity_attach<T: Entity>(&mut self, mut entity: T) {
         let info = entity.get_info_mutable();
         info.index = self.entity_index;
@@ -111,9 +133,19 @@ impl<'a> World<'a> {
         self.entity_attach.push(Box::new(entity));
     }
 
-    pub fn entity_detach<T: Entity>(&mut self, entity: &T) {}
+    pub fn entity_detach<T: Entity>(&mut self, entity: &mut T) {
+        entity.get_info_mutable().close = true;
+        // TO-DO run entity.close() destructor here?
+    }
 
-    pub fn entity_find(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
+    pub fn entity_find(&self, index: usize) -> Option<&Box<dyn Entity>> {
+        self.entity_list
+            .iter()
+            .find(|entity| entity.get_info().index == index)
+            .map(|v| v as _)
+    }
+
+    pub fn entity_find_mutable(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
         self.entity_list
             .iter_mut()
             .find(|entity| entity.get_info().index == index)

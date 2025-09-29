@@ -61,9 +61,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Default)]
 pub struct Animation {
-    name: String,
-    rate: f32,
-    frame: f32,
+    pub name: String,
+    pub rate: f32,
+    pub frame: f32,
 }
 
 impl Animation {
@@ -138,6 +138,7 @@ impl Animation {
         let wrl = world as *mut World;
         let model = world.scene.asset.get_model(path)?;
 
+        // TO-DO probably not a good idea to be getting the model animation each frame...fix.
         if let Some(animation) = model.model.get_model_animation() {
             let delta = self.frame + World::TIME_STEP * self.rate;
 
@@ -161,10 +162,47 @@ impl Animation {
             }
 
             self.frame += World::TIME_STEP * self.rate;
-            self.frame %= animation.get_frame_count() as f32 + 1.0;
+            self.frame %= animation.get_frame_count() as f32;
         }
 
         Ok(())
+    }
+
+    pub fn get_bone_data(
+        &self,
+        model: &AssetModel,
+        bone_name: &str,
+    ) -> anyhow::Result<Option<(Vector3, Vector4, Vector3)>> {
+        let frame = model
+            .animation
+            .get_animation(&self.name)
+            .ok_or(anyhow::Error::msg(
+                "Animation::get_bone_data(): Could not find animation.",
+            ))?;
+
+        let mut bone_index = None;
+
+        // find the actual bone index into the pose array.
+        for (i, bone) in frame.get_bone_info().iter().enumerate() {
+            let name = String::from_utf8(bone.name.iter().map(|&c| c as u8).collect()).unwrap();
+            let name = name.trim_matches(char::from(0));
+            if name == bone_name {
+                bone_index = Some(i);
+                break;
+            }
+        }
+
+        // found bone...
+        if let Some(bone_index) = bone_index {
+            // get bone data, and return it.
+            let frame = frame.get_frame_global_poses(self.frame as usize)[bone_index];
+
+            let (point, angle, scale) = matrix_decompose(&frame);
+
+            return Ok(Some((point, angle, scale)));
+        }
+
+        Ok(None)
     }
 }
 
@@ -260,6 +298,124 @@ pub fn ease_in_out_cubic(x: f32) -> f32 {
     } else {
         1.0 - (-2.0 * x + 2.0).powf(3.0) / 2.0
     }
+}
+
+/// Decomposes a transformation matrix into translation, rotation (quaternion), and scale,
+/// removing shear (same algorithm and numeric stabilizations as the original C code).
+pub fn matrix_decompose(mat: &Matrix) -> (Vector3, Quaternion, Vector3) {
+    let eps: f32 = 1e-9;
+
+    // Extract translation
+    let translation = Vector3 {
+        x: mat.m12,
+        y: mat.m13,
+        z: mat.m14,
+    };
+
+    // Matrix Columns - rotation will be extracted into here.
+    // Note: this matches the C code where matColumns[0] = { m0, m4, m8 } etc.
+    let mut mat_columns = [
+        Vector3 {
+            x: mat.m0,
+            y: mat.m4,
+            z: mat.m8,
+        },
+        Vector3 {
+            x: mat.m1,
+            y: mat.m5,
+            z: mat.m9,
+        },
+        Vector3 {
+            x: mat.m2,
+            y: mat.m6,
+            z: mat.m10,
+        },
+    ];
+
+    // Shear parameters XY, XZ, YZ (extracted and ignored)
+    let mut shear = [0.0f32; 3];
+
+    // Normalized scale parameters
+    let mut scl = Vector3::default();
+
+    // Max-normalizing helps numerical stability
+    let mut stabilizer = eps;
+    for i in 0..3 {
+        stabilizer = stabilizer.max(mat_columns[i].x.abs());
+        stabilizer = stabilizer.max(mat_columns[i].y.abs());
+        stabilizer = stabilizer.max(mat_columns[i].z.abs());
+    }
+
+    mat_columns[0] = mat_columns[0].scale_by(1.0 / stabilizer);
+    mat_columns[1] = mat_columns[1].scale_by(1.0 / stabilizer);
+    mat_columns[2] = mat_columns[2].scale_by(1.0 / stabilizer);
+
+    // X scale
+    scl.x = mat_columns[0].length();
+    if scl.x > eps {
+        mat_columns[0] = mat_columns[0].scale_by(1.0 / scl.x);
+    }
+
+    // Compute XY shear and make col2 orthogonal
+    shear[0] = mat_columns[0].dot(mat_columns[1]);
+    mat_columns[1] = mat_columns[1] - (mat_columns[0].scale_by(shear[0]));
+
+    // Y scale
+    scl.y = mat_columns[1].length();
+    if scl.y > eps {
+        mat_columns[1] = mat_columns[1].scale_by(1.0 / scl.y);
+        shear[0] /= scl.y; // Correct XY shear
+    }
+
+    // Compute XZ and YZ shears and make col3 orthogonal
+    shear[1] = mat_columns[0].dot(mat_columns[2]);
+    mat_columns[2] = mat_columns[2] - (mat_columns[0].scale_by(shear[1]));
+    shear[2] = mat_columns[1].dot(mat_columns[2]);
+    mat_columns[2] = mat_columns[2] - (mat_columns[1].scale_by(shear[2]));
+
+    // Z scale
+    scl.z = mat_columns[2].length();
+    if scl.z > eps {
+        mat_columns[2] = mat_columns[2].scale_by(1.0 / scl.z);
+        shear[1] /= scl.z; // Correct XZ shear
+        shear[2] /= scl.z; // Correct YZ shear
+    }
+
+    // Ensure proper handedness (SO(3)) by enforcing determinant = +1
+    let cp = mat_columns[1].cross(mat_columns[2]);
+    if mat_columns[0].dot(cp) < 0.0 {
+        scl = -scl;
+        mat_columns[0] = -mat_columns[0];
+        mat_columns[1] = -mat_columns[1];
+        mat_columns[2] = -mat_columns[2];
+    }
+
+    // Set scale (rescale by stabilizer to reverse normalization)
+    let scale = scl.scale_by(stabilizer);
+
+    // Build rotation matrix from orthonormal columns (matching C's construction)
+    let rotation_matrix = Matrix {
+        m0: mat_columns[0].x,
+        m1: mat_columns[0].y,
+        m2: mat_columns[0].z,
+        m3: 0.0,
+        m4: mat_columns[1].x,
+        m5: mat_columns[1].y,
+        m6: mat_columns[1].z,
+        m7: 0.0,
+        m8: mat_columns[2].x,
+        m9: mat_columns[2].y,
+        m10: mat_columns[2].z,
+        m11: 0.0,
+        m12: 0.0,
+        m13: 0.0,
+        m14: 0.0,
+        m15: 1.0,
+    };
+
+    let rotation = Vector4::from_matrix(rotation_matrix);
+
+    (translation, rotation, scale)
 }
 
 pub fn draw_model_transform(

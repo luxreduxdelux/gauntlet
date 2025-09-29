@@ -92,26 +92,22 @@ impl Entity for Destructible {
             .asset
             .set_model(context, "data/video/crate.glb")?;
 
-        self.rigid = world.scene.physical.new_rigid_dynamic(self.point);
-        self.collider = world
-            .scene
-            .physical
-            .new_cuboid(Vector3::new(0.5, 0.5, 0.5), Some(self.rigid));
-        world.scene.physical.set_rigid_angle(
-            self.rigid,
-            Vector4::from_euler(
-                self.angle.y.to_radians(),
-                self.angle.x.to_radians(),
-                self.angle.z.to_radians(),
-            ),
+        let (rigid, collider) = world.scene.physical.new_rigid_cuboid_fixed(
+            self.point,
+            self.angle,
+            Vector3::new(0.5, 0.5, 0.5),
+            &self.info,
         )?;
+
+        self.rigid = rigid;
+        self.collider = collider;
 
         Ok(())
     }
 
     fn draw_r3d(
         &mut self,
-        state: &mut State,
+        _state: &mut State,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -120,44 +116,6 @@ impl Entity for Destructible {
         let transform = world.scene.physical.get_rigid_transform(self.rigid)?;
 
         model.model.draw_pro(&mut context.r3d, transform);
-
-        Ok(())
-    }
-
-    fn draw_3d(
-        &mut self,
-        _state: &mut State,
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        world: &mut World,
-    ) -> anyhow::Result<()> {
-        let point = world.scene.physical.get_rigid_point(self.rigid)?;
-        let angle = world.scene.physical.get_rigid_angle(self.rigid)?;
-        let angle = angle.to_euler();
-        let angle = Vector3::new(
-            angle.y.to_degrees(),
-            angle.x.to_degrees(),
-            angle.z.to_degrees(),
-        );
-
-        // TO-DO fix, incorrect angles
-        //Direction::draw_debug(draw, point, angle);
-
-        /*
-        let time = draw.get_time() as f32 * 10.0;
-        let angle_draw = Vector3::new(time, self.angle.y, self.angle.z);
-        let angle_phys = Vector3::new(self.angle.y, time, self.angle.z);
-
-        Direction::draw_debug(draw, self.point, angle_draw);
-
-        world.scene.physical.set_rigid_angle(
-            self.rigid,
-            Vector4::from_euler(
-                angle_phys.x.to_radians(),
-                angle_phys.y.to_radians(),
-                angle_phys.z.to_radians(),
-            ),
-        )?;
-        */
 
         Ok(())
     }

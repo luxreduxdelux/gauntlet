@@ -111,8 +111,8 @@ impl Entity for Door {
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
 
-        let point_a = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.00;
-        let point_b = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.35;
+        let point_a = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.00;
+        let point_b = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.35;
 
         let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
 

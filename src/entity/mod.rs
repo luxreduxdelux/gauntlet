@@ -50,6 +50,7 @@
 
 pub mod destructible;
 pub mod door;
+pub mod dummy;
 pub mod enemy;
 pub mod implementation;
 pub mod lift;

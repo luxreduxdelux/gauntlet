@@ -64,91 +64,32 @@ use super::player::Player;
 
 //================================================================
 
-#[derive(Default)]
-enum EnemyState {
-    #[default]
-    Idle,
-    Walk,
-    Fire,
-}
-
-impl EnemyState {
-    fn update(world: &mut World, enemy: &mut Enemy) {
-        match enemy.state {
-            Self::Idle => {
-                // if player is in same room as us, check if we have line of sight.
-                // if we do, check if we can fire, or if we can't,
-                // then get a path to player, and transition to walk state.
-
-                if let Some(index) = world.player
-                    && let Some(player) = world.entity_find(index)
-                {
-                    if let Some(other) = player.as_any().downcast_ref::<Player>() {
-                        let enemy_room = world.scene.room_active_index(enemy.point);
-                        let other_room = world.scene.room_active_index(other.point);
-
-                        if let Some(e_room) = enemy_room
-                            && let Some(o_room) = other_room
-                            && e_room == o_room
-                        {}
-                    }
-                }
-            }
-            Self::Walk => {
-                // if we have line of sight to player, then fire.
-                // if we don't, then walk the entire path to player,
-                // constantly checking if we can fire at player.
-            }
-            Self::Fire => {
-                // fire at player if we have line of sight. otherwise,
-                // go to walk state.
-            }
-        }
-    }
-
-    fn to_idle(world: &mut World, enemy: &mut Enemy) -> anyhow::Result<()> {
-        enemy.state = Self::Idle;
-        enemy.animation = Animation::new(
-            world.scene.asset.get_model("data/video/test.glb")?,
-            "Idle_Loop",
-            60.0,
-        );
-
-        Ok(())
-    }
-
-    fn to_walk(world: &mut World, enemy: &mut Enemy) -> anyhow::Result<()> {
-        enemy.state = Self::Walk;
-        enemy.animation = Animation::new(
-            world.scene.asset.get_model("data/video/test.glb")?,
-            "Walk_Loop",
-            60.0,
-        );
-
-        Ok(())
-    }
-}
-
 #[derive(Serialize, Deserialize)]
-pub struct Enemy {
+pub struct Dummy {
     point: Vector3,
     angle: Vector3,
     #[serde(skip)]
-    rigid: RigidBodyHandle,
-    #[serde(skip)]
-    collider: ColliderHandle,
-    #[serde(skip)]
-    character: KinematicCharacterController,
-    #[serde(skip)]
     animation: Animation,
-    #[serde(skip)]
-    state: EnemyState,
     #[serde(skip)]
     info: EntityInfo,
 }
 
+impl Dummy {
+    const BONE_TORSO: [&str; 5] = [
+        "DEF-shoulderR",
+        "DEF-shoulderL",
+        "DEF-spine003",
+        "DEF-spine002",
+        "DEF-spine001",
+    ];
+
+    const BONE_L_ARM: [&str; 3] = ["DEF-upper_armL", "DEF-forearmL", "DEF-handL"];
+
+    const BONE_R_ARM: [&str; 3] = ["DEF-upper_armR", "DEF-forearmR", "DEF-handR"];
+}
+
 #[typetag::serde]
-impl Entity for Enemy {
+impl Entity for Dummy {
     fn get_info(&self) -> &EntityInfo {
         &self.info
     }
@@ -177,20 +118,61 @@ impl Entity for Enemy {
             .asset
             .set_model(context, "data/video/test.glb")?;
 
-        let (rigid, collider) = world.scene.physical.new_rigid_cuboid_fixed(
-            self.point,
-            Vector3::default(),
-            Vector3::new(0.25, 0.50, 0.25),
-            &self.info,
-        )?;
-
-        self.rigid = rigid;
-        self.collider = collider;
-
-        self.character = KinematicCharacterController::default();
-        self.character.snap_to_ground = None;
-
         self.animation = Animation::new(model, "Idle_Loop", 60.0);
+
+    // --- Helper to spawn body part ---
+    let mut spawn_part = |point: Vector3, scale: Vector3| {
+        let rigid = world.scene.physical.new_rigid_dynamic();
+        world.scene.physical.set_rigid_point(rigid, self.point + point).unwrap();
+        let solid = world.scene.physical.new_cuboid(scale, Some(rigid));
+        let solid = world.scene.physical.get_collider_mutable(solid).unwrap();
+        solid.set_density(1.0);
+        rigid
+    };
+
+    // --- Body parts ---
+    let torso = spawn_part(Vector3::new(0.0, 1.5, 0.0), Vector3::new(0.3, 0.5, 0.15));
+    let head = spawn_part(Vector3::new(0.0, 2.3, 0.0), Vector3::new(0.2, 0.2, 0.2));
+
+    let left_arm = spawn_part(Vector3::new(-0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
+    let right_arm = spawn_part(Vector3::new(0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
+
+    let left_leg = spawn_part(Vector3::new(-0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
+    let right_leg = spawn_part(Vector3::new(0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
+
+    // --- Joints ---
+    // Head to torso
+    let joint = SphericalJointBuilder::new().local_anchor1(point![0.0, 0.5, 0.0]).local_anchor2(point![0.0, -0.2, 0.0]);
+    world.scene.physical.impulse_joint_set.insert(torso, head, joint, true);
+
+    // Arms to torso
+    let left_joint = SphericalJointBuilder::new()
+        .local_anchor1(point![-0.3, 0.3, 0.0])
+        .local_anchor2(point![0.0, 0.4, 0.0]);
+    world.scene.physical.impulse_joint_set.insert(torso, left_arm, left_joint, true);
+
+    let right_joint = SphericalJointBuilder::new()
+        .local_anchor1(point![0.3, 0.3, 0.0])
+        .local_anchor2(point![0.0, 0.4, 0.0]);
+    world.scene.physical.impulse_joint_set.insert(torso, right_arm, right_joint, true);
+
+    // Legs to torso
+    let left_leg_joint = SphericalJointBuilder::new()
+        .local_anchor1(point![-0.2, -0.5, 0.0])
+        .local_anchor2(point![0.0, 0.5, 0.0]);
+    world.scene.physical.impulse_joint_set.insert(torso, left_leg, left_leg_joint, true);
+
+    let right_leg_joint = SphericalJointBuilder::new()
+        .local_anchor1(point![0.2, -0.5, 0.0])
+        .local_anchor2(point![0.0, 0.5, 0.0]);
+    world.scene.physical.impulse_joint_set.insert(torso, right_leg, right_leg_joint, true);
+
+        /*
+        for bone in Self::BONE_TORSO {
+            let point = self.animation.get_bone_data(model, bone)?;
+            let joint = SphericalJointBuilder::new();
+        }
+        */
 
         Ok(())
     }
@@ -234,9 +216,15 @@ impl Entity for Enemy {
     ) -> anyhow::Result<()> {
         let model = world.scene.asset.get_model("data/video/test.glb")?;
 
-        if let Ok(Some((point, _, _))) = self.animation.get_bone_data(model, "DEF-headtip") {
-            draw.draw_cube_v(self.point + point, Vector3::one() * 0.1, Color::RED);
+        /*
+        if let Ok(Some(point)) = self.animation.get_bone_data(model, "DEF-headtip") {
+            draw.draw_cube_v(
+                self.point - Vector3::new(0.0, 0.5, 0.0) + point,
+                Vector3::one() * 0.1,
+                Color::RED,
+            );
         }
+        */
 
         Ok(())
     }
@@ -249,7 +237,6 @@ impl Entity for Enemy {
     ) -> anyhow::Result<()> {
         self.animation
             .update(state, world, "data/video/test.glb", self.point)?;
-        EnemyState::update(world, self);
 
         Ok(())
     }

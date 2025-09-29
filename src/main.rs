@@ -54,6 +54,14 @@
 // TO-DO look into creating own custom model format for level model/entity model
 // TO-DO translation system
 
+// main.rs
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
+
 mod asset;
 mod entity;
 mod external;
