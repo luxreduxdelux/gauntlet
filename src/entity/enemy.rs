@@ -48,19 +48,18 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::entity::implementation::*;
-use crate::state::*;
+use crate::entity::player::*;
+use crate::physical::*;
 use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
 use rapier3d::control::KinematicCharacterController;
-use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use super::player::Player;
 
 //================================================================
 
@@ -74,24 +73,23 @@ enum EnemyState {
 
 impl EnemyState {
     fn update(world: &mut World, enemy: &mut Enemy) {
-        match enemy.state {
+        match enemy.app {
             Self::Idle => {
                 // if player is in same room as us, check if we have line of sight.
                 // if we do, check if we can fire, or if we can't,
-                // then get a path to player, and transition to walk state.
+                // then get a path to player, and transition to walk app.
 
                 if let Some(index) = world.player
                     && let Some(player) = world.entity_find(index)
+                    && let Some(other) = player.as_any().downcast_ref::<Player>()
                 {
-                    if let Some(other) = player.as_any().downcast_ref::<Player>() {
-                        let enemy_room = world.scene.room_active_index(enemy.point);
-                        let other_room = world.scene.room_active_index(other.point);
+                    let enemy_room = world.scene.room_active_index(enemy.point);
+                    let other_room = world.scene.room_active_index(other.point);
 
-                        if let Some(e_room) = enemy_room
-                            && let Some(o_room) = other_room
-                            && e_room == o_room
-                        {}
-                    }
+                    if let Some(e_room) = enemy_room
+                        && let Some(o_room) = other_room
+                        && e_room == o_room
+                    {}
                 }
             }
             Self::Walk => {
@@ -101,13 +99,13 @@ impl EnemyState {
             }
             Self::Fire => {
                 // fire at player if we have line of sight. otherwise,
-                // go to walk state.
+                // go to walk app.
             }
         }
     }
 
     fn to_idle(world: &mut World, enemy: &mut Enemy) -> anyhow::Result<()> {
-        enemy.state = Self::Idle;
+        enemy.app = Self::Idle;
         enemy.animation = Animation::new(
             world.scene.asset.get_model("data/video/test.glb")?,
             "Idle_Loop",
@@ -118,7 +116,7 @@ impl EnemyState {
     }
 
     fn to_walk(world: &mut World, enemy: &mut Enemy) -> anyhow::Result<()> {
-        enemy.state = Self::Walk;
+        enemy.app = Self::Walk;
         enemy.animation = Animation::new(
             world.scene.asset.get_model("data/video/test.glb")?,
             "Walk_Loop",
@@ -134,15 +132,13 @@ pub struct Enemy {
     point: Vector3,
     angle: Vector3,
     #[serde(skip)]
-    rigid: RigidBodyHandle,
-    #[serde(skip)]
-    collider: ColliderHandle,
+    presence: Presence,
     #[serde(skip)]
     character: KinematicCharacterController,
     #[serde(skip)]
     animation: Animation,
     #[serde(skip)]
-    state: EnemyState,
+    app: EnemyState,
     #[serde(skip)]
     info: EntityInfo,
 }
@@ -159,7 +155,7 @@ impl Entity for Enemy {
     #[rustfmt::skip]
     fn initialize(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -177,15 +173,13 @@ impl Entity for Enemy {
             .asset
             .set_model(context, "data/video/test.glb")?;
 
-        let (rigid, collider) = world.scene.physical.new_rigid_cuboid_fixed(
+        self.presence = Presence::new_rigid_cuboid_fixed(
+            &mut world.scene.physical,
             self.point,
             Vector3::default(),
             Vector3::new(0.25, 0.50, 0.25),
             &self.info,
         )?;
-
-        self.rigid = rigid;
-        self.collider = collider;
 
         self.character = KinematicCharacterController::default();
         self.character.snap_to_ground = None;
@@ -197,7 +191,7 @@ impl Entity for Enemy {
 
     fn draw_r3d(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -228,7 +222,7 @@ impl Entity for Enemy {
 
     fn draw_3d(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -243,12 +237,12 @@ impl Entity for Enemy {
 
     fn tick(
         &mut self,
-        state: &mut State,
-        handle: &mut RaylibHandle,
+        app: &mut App,
+        _handle: &mut RaylibHandle,
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.animation
-            .update(state, world, "data/video/test.glb", self.point)?;
+            .update(app, world, "data/video/test.glb", self.point)?;
         EnemyState::update(world, self);
 
         Ok(())

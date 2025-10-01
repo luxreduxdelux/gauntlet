@@ -48,19 +48,16 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::entity::implementation::*;
-use crate::state::*;
 use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
-use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
-
-use super::player::Player;
 
 //================================================================
 
@@ -100,7 +97,7 @@ impl Entity for Dummy {
     #[rustfmt::skip]
     fn initialize(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -120,52 +117,54 @@ impl Entity for Dummy {
 
         self.animation = Animation::new(model, "Idle_Loop", 60.0);
 
-    // --- Helper to spawn body part ---
-    let mut spawn_part = |point: Vector3, scale: Vector3| {
-        let rigid = world.scene.physical.new_rigid_dynamic();
-        world.scene.physical.set_rigid_point(rigid, self.point + point).unwrap();
-        let solid = world.scene.physical.new_cuboid(scale, Some(rigid));
-        let solid = world.scene.physical.get_collider_mutable(solid).unwrap();
-        solid.set_density(1.0);
-        rigid
-    };
+        // --- Helper to spawn body part ---
+        let mut spawn_part = |point: Vector3, scale: Vector3| {
+            let rigid = world.scene.physical.new_rigid_dynamic();
+            world.scene.physical.set_rigid_point(rigid, self.point + point).unwrap();
+            let solid = world.scene.physical.new_cuboid(scale, Some(rigid));
+            let solid = world.scene.physical.get_collider_mutable(solid).unwrap();
+            solid.set_density(1.0);
+            rigid
+        };
 
-    // --- Body parts ---
-    let torso = spawn_part(Vector3::new(0.0, 1.5, 0.0), Vector3::new(0.3, 0.5, 0.15));
-    let head = spawn_part(Vector3::new(0.0, 2.3, 0.0), Vector3::new(0.2, 0.2, 0.2));
+        // --- Body parts ---
+        let torso = spawn_part(Vector3::new(0.0, 1.5, 0.0), Vector3::new(0.3, 0.5, 0.15));
+        let head = spawn_part(Vector3::new(0.0, 2.3, 0.0), Vector3::new(0.2, 0.2, 0.2));
 
-    let left_arm = spawn_part(Vector3::new(-0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
-    let right_arm = spawn_part(Vector3::new(0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
+        let left_arm = spawn_part(Vector3::new(-0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
+        let right_arm = spawn_part(Vector3::new(0.6, 1.5, 0.0), Vector3::new(0.15, 0.4, 0.15));
 
-    let left_leg = spawn_part(Vector3::new(-0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
-    let right_leg = spawn_part(Vector3::new(0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
+        let left_leg = spawn_part(Vector3::new(-0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
+        let right_leg = spawn_part(Vector3::new(0.2, 0.5, 0.0), Vector3::new(0.15, 0.5, 0.15));
 
-    // --- Joints ---
-    // Head to torso
-    let joint = SphericalJointBuilder::new().local_anchor1(point![0.0, 0.5, 0.0]).local_anchor2(point![0.0, -0.2, 0.0]);
-    world.scene.physical.impulse_joint_set.insert(torso, head, joint, true);
+        /*
+        // --- Joints ---
+        // Head to torso
+        let joint = SphericalJointBuilder::new().local_anchor1(point![0.0, 0.5, 0.0]).local_anchor2(point![0.0, -0.2, 0.0]);
+        world.scene.physical.impulse_joint_set.insert(torso, head, joint, true);
 
-    // Arms to torso
-    let left_joint = SphericalJointBuilder::new()
-        .local_anchor1(point![-0.3, 0.3, 0.0])
-        .local_anchor2(point![0.0, 0.4, 0.0]);
-    world.scene.physical.impulse_joint_set.insert(torso, left_arm, left_joint, true);
+        // Arms to torso
+        let left_joint = SphericalJointBuilder::new()
+            .local_anchor1(point![-0.3, 0.3, 0.0])
+            .local_anchor2(point![0.0, 0.4, 0.0]);
+        world.scene.physical.impulse_joint_set.insert(torso, left_arm, left_joint, true);
 
-    let right_joint = SphericalJointBuilder::new()
-        .local_anchor1(point![0.3, 0.3, 0.0])
-        .local_anchor2(point![0.0, 0.4, 0.0]);
-    world.scene.physical.impulse_joint_set.insert(torso, right_arm, right_joint, true);
+        let right_joint = SphericalJointBuilder::new()
+            .local_anchor1(point![0.3, 0.3, 0.0])
+            .local_anchor2(point![0.0, 0.4, 0.0]);
+        world.scene.physical.impulse_joint_set.insert(torso, right_arm, right_joint, true);
 
-    // Legs to torso
-    let left_leg_joint = SphericalJointBuilder::new()
-        .local_anchor1(point![-0.2, -0.5, 0.0])
-        .local_anchor2(point![0.0, 0.5, 0.0]);
-    world.scene.physical.impulse_joint_set.insert(torso, left_leg, left_leg_joint, true);
+        // Legs to torso
+        let left_leg_joint = SphericalJointBuilder::new()
+            .local_anchor1(point![-0.2, -0.5, 0.0])
+            .local_anchor2(point![0.0, 0.5, 0.0]);
+        world.scene.physical.impulse_joint_set.insert(torso, left_leg, left_leg_joint, true);
 
-    let right_leg_joint = SphericalJointBuilder::new()
-        .local_anchor1(point![0.2, -0.5, 0.0])
-        .local_anchor2(point![0.0, 0.5, 0.0]);
-    world.scene.physical.impulse_joint_set.insert(torso, right_leg, right_leg_joint, true);
+        let right_leg_joint = SphericalJointBuilder::new()
+            .local_anchor1(point![0.2, -0.5, 0.0])
+            .local_anchor2(point![0.0, 0.5, 0.0]);
+        world.scene.physical.impulse_joint_set.insert(torso, right_leg, right_leg_joint, true);
+        */
 
         /*
         for bone in Self::BONE_TORSO {
@@ -179,7 +178,7 @@ impl Entity for Dummy {
 
     fn draw_r3d(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -210,33 +209,21 @@ impl Entity for Dummy {
 
     fn draw_3d(
         &mut self,
-        state: &mut State,
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        world: &mut World,
+        _app: &mut App,
+        _draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        _world: &mut World,
     ) -> anyhow::Result<()> {
-        let model = world.scene.asset.get_model("data/video/test.glb")?;
-
-        /*
-        if let Ok(Some(point)) = self.animation.get_bone_data(model, "DEF-headtip") {
-            draw.draw_cube_v(
-                self.point - Vector3::new(0.0, 0.5, 0.0) + point,
-                Vector3::one() * 0.1,
-                Color::RED,
-            );
-        }
-        */
-
         Ok(())
     }
 
     fn tick(
         &mut self,
-        state: &mut State,
-        handle: &mut RaylibHandle,
+        app: &mut App,
+        _handle: &mut RaylibHandle,
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.animation
-            .update(state, world, "data/video/test.glb", self.point)?;
+            .update(app, world, "data/video/test.glb", self.point)?;
 
         Ok(())
     }

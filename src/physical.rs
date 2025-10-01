@@ -49,7 +49,6 @@
 */
 
 use crate::entity::implementation::*;
-use crate::physical::nalgebra::matrix;
 use crate::world::*;
 
 //================================================================
@@ -66,6 +65,48 @@ use std::sync::Mutex;
 //================================================================
 
 #[derive(Default)]
+pub struct Presence {
+    pub rigid: RigidBodyHandle,
+    pub collider: ColliderHandle,
+}
+
+impl Presence {
+    // Convenience function for creating a fixed rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
+    pub fn new_rigid_cuboid_fixed(
+        physical: &mut Physical,
+        point: Vector3,
+        angle: Vector3,
+        scale: Vector3,
+        info: &EntityInfo,
+    ) -> anyhow::Result<Self> {
+        let rigid = physical.new_rigid_fixed();
+        physical.set_rigid_point(rigid, point)?;
+        physical.set_rigid_angle(rigid, angle)?;
+        physical.set_rigid_data(rigid, info.index as u128)?;
+        let collider = physical.new_cuboid(scale, Some(rigid));
+
+        Ok(Self { rigid, collider })
+    }
+
+    // Convenience function for creating a dynamic rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
+    pub fn new_rigid_cuboid_dynamic(
+        physical: &mut Physical,
+        point: Vector3,
+        angle: Vector3,
+        scale: Vector3,
+        info: &EntityInfo,
+    ) -> anyhow::Result<Self> {
+        let rigid = physical.new_rigid_dynamic();
+        physical.set_rigid_point(rigid, point)?;
+        physical.set_rigid_angle(rigid, angle)?;
+        physical.set_rigid_data(rigid, info.index as u128)?;
+        let collider = physical.new_cuboid(scale, Some(rigid));
+
+        Ok(Self { rigid, collider })
+    }
+}
+
+#[derive(Default)]
 pub struct Physical {
     rigid_body_set: RigidBodySet,
     collider_set: ColliderSet,
@@ -74,15 +115,20 @@ pub struct Physical {
     island_manager: IslandManager,
     broad_phase: DefaultBroadPhase,
     narrow_phase: NarrowPhase,
-    pub impulse_joint_set: ImpulseJointSet,
-    pub multibody_joint_set: MultibodyJointSet,
+    impulse_joint_set: ImpulseJointSet,
+    multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
     debug_render_pipeline: DebugRenderPipeline,
     pub collision_handler: CollisionHandler,
 }
 
 impl Physical {
-    // Run a tick in the simulation.
+    pub const GROUP_GEOMETRY: InteractionGroups =
+        InteractionGroups::new(Group::GROUP_1, Group::GROUP_1);
+    pub const GROUP_ENTITY: InteractionGroups =
+        InteractionGroups::new(Group::GROUP_2, Group::GROUP_2);
+
+    // Run a tick in the physical simulation.
     pub fn tick(&mut self) {
         if let Ok(lock) = &mut self.collision_handler.collision_list.lock() {
             lock.clear();
@@ -104,7 +150,7 @@ impl Physical {
         );
     }
 
-    // Draw the simulation state.
+    // Draw the physical simulation's state.
     pub fn draw(&mut self) {
         self.debug_render_pipeline.render(
             &mut DebugRender {},
@@ -118,11 +164,19 @@ impl Physical {
 
     //================================================================
 
-    pub fn cast_point(
+    /// Check if a point is intersecting any collider in the world.
+    pub fn intersect_point(
         &self,
         point: raylib::math::Vector3,
+        rigid: Option<RigidBodyHandle>,
         filter: QueryFilter,
     ) -> Option<(ColliderHandle, Collider)> {
+        let filter = if let Some(rigid) = rigid {
+            filter.exclude_rigid_body(rigid)
+        } else {
+            filter
+        };
+
         let query_pipeline = self.broad_phase.as_query_pipeline(
             self.narrow_phase.query_dispatcher(),
             &self.rigid_body_set,
@@ -140,6 +194,50 @@ impl Physical {
         None
     }
 
+    /// Check if a cuboid is intersecting any collider in the world.
+    pub fn intersect_cuboid(
+        &self,
+        point: Vector3,
+        angle: Vector3,
+        shape: Vector3,
+        rigid: Option<RigidBodyHandle>,
+        filter: QueryFilter,
+    ) -> Option<(ColliderHandle, Collider)> {
+        let filter = if let Some(rigid) = rigid {
+            filter.exclude_rigid_body(rigid)
+        } else {
+            filter
+        };
+
+        let (v, a) = Vector4::from_euler(
+            angle.y.to_radians(),
+            angle.x.to_radians(),
+            angle.z.to_radians(),
+        )
+        .to_axis_angle();
+        let angle = v * a;
+
+        let point = Isometry::new(
+            vector![point.x, point.y, point.z],
+            vector![angle.x, angle.y, angle.z],
+        );
+        let shape = Cuboid::new(vector![shape.x, shape.y, shape.z]);
+
+        let query_pipeline = self.broad_phase.as_query_pipeline(
+            self.narrow_phase.query_dispatcher(),
+            &self.rigid_body_set,
+            &self.collider_set,
+            filter,
+        );
+
+        if let Some(last) = query_pipeline.intersect_shape(point, &shape).last() {
+            return Some((last.0, last.1.clone()));
+        }
+
+        None
+    }
+
+    /// Cast a ray in the world.
     pub fn cast_ray(
         &self,
         point: Vector3,
@@ -170,52 +268,25 @@ impl Physical {
         query_pipeline.cast_ray_and_get_normal(&ray, distance, solid)
     }
 
-    pub fn intersect_cuboid(
-        &self,
-        point: Vector3,
-        angle: Vector3,
-        shape: Vector3,
-        filter: QueryFilter,
-    ) -> Option<(ColliderHandle, Collider)> {
-        let (v, a) = Vector4::from_euler(
-            angle.y.to_radians(),
-            angle.x.to_radians(),
-            angle.z.to_radians(),
-        )
-        .to_axis_angle();
-        let angle = v * a;
-
-        let point = Isometry::new(
-            vector![point.x, point.y, point.z],
-            vector![angle.x, angle.y, angle.z],
-        );
-        let shape = Cuboid::new(vector![shape.x, shape.y, shape.z]);
-
-        let query_pipeline = self.broad_phase.as_query_pipeline(
-            self.narrow_phase.query_dispatcher(),
-            &self.rigid_body_set,
-            &self.collider_set,
-            filter,
-        );
-
-        if let Some(last) = query_pipeline.intersect_shape(point, &shape).last() {
-            return Some((last.0, last.1.clone()));
-        }
-
-        None
-    }
-
+    /// Cast a cuboid in the world.
     pub fn cast_cuboid(
         &self,
         point: Vector3,
         shape: Vector3,
         speed: Vector3,
         distance: f32,
+        rigid: Option<RigidBodyHandle>,
         filter: QueryFilter,
     ) -> Option<(ColliderHandle, ShapeCastHit)> {
         let point = Isometry::new(vector![point.x, point.y, point.z], vector![0.0, 0.0, 0.0]);
         let shape = Cuboid::new(vector![shape.x, shape.y, shape.z]);
         let speed = vector![speed.x, speed.y, speed.z];
+
+        let filter = if let Some(rigid) = rigid {
+            filter.exclude_rigid_body(rigid)
+        } else {
+            filter
+        };
 
         let query_pipeline = self.broad_phase.as_query_pipeline(
             self.narrow_phase.query_dispatcher(),
@@ -296,40 +367,6 @@ impl Physical {
     }
 
     //================================================================
-
-    // Convenience function for creating a fixed rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
-    pub fn new_rigid_cuboid_fixed(
-        &mut self,
-        point: Vector3,
-        angle: Vector3,
-        scale: Vector3,
-        info: &EntityInfo,
-    ) -> anyhow::Result<(RigidBodyHandle, ColliderHandle)> {
-        let rigid = self.new_rigid_fixed();
-        self.set_rigid_point(rigid, point)?;
-        self.set_rigid_angle(rigid, angle)?;
-        self.set_rigid_data(rigid, info.index as u128)?;
-        let collider = self.new_cuboid(scale, Some(rigid));
-
-        Ok((rigid, collider))
-    }
-
-    // Convenience function for creating a dynamic rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
-    pub fn new_rigid_cuboid_dynamic(
-        &mut self,
-        point: Vector3,
-        angle: Vector3,
-        scale: Vector3,
-        info: &EntityInfo,
-    ) -> anyhow::Result<(RigidBodyHandle, ColliderHandle)> {
-        let rigid = self.new_rigid_dynamic();
-        self.set_rigid_point(rigid, point)?;
-        self.set_rigid_angle(rigid, angle)?;
-        self.set_rigid_data(rigid, info.index as u128)?;
-        let collider = self.new_cuboid(scale, Some(rigid));
-
-        Ok((rigid, collider))
-    }
 
     /// Create a new rigid body (fixed).
     pub fn new_rigid_fixed(&mut self) -> RigidBodyHandle {
@@ -421,8 +458,8 @@ impl Physical {
         Ok(())
     }
 
-    #[rustfmt::skip]
     /// Get the transform of a rigid body.
+    #[rustfmt::skip]
     pub fn get_rigid_transform(&self, handle: RigidBodyHandle) -> anyhow::Result<raylib::math::Matrix> {
         let m = self.get_rigid(handle)?.position().to_matrix();
 
@@ -436,6 +473,7 @@ impl Physical {
 
     //================================================================
 
+    // Create a new cuboid collider.
     pub fn new_cuboid(
         &mut self,
         shape: Vector3,
@@ -454,6 +492,7 @@ impl Physical {
         }
     }
 
+    // Create a new model collider.
     pub fn new_model(
         &mut self,
         model: &crate::external::r3d::Model,
@@ -522,7 +561,7 @@ impl Physical {
         Ok(())
     }
 
-    /// Set a collider's sensor state.
+    /// Set a collider's sensor app.
     pub fn set_collider_sensor(
         &mut self,
         handle: ColliderHandle,
@@ -558,6 +597,8 @@ impl Physical {
     }
 }
 
+//================================================================
+
 #[derive(Default)]
 pub struct CollisionHandler {
     pub collision_list: Arc<Mutex<Vec<CollisionEvent>>>,
@@ -586,6 +627,8 @@ impl EventHandler for CollisionHandler {
     ) {
     }
 }
+
+//================================================================
 
 struct DebugRender {}
 

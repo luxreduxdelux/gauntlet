@@ -50,7 +50,7 @@
 
 use std::any::Any;
 
-use crate::state::*;
+use crate::app::*;
 use crate::world::*;
 
 //================================================================
@@ -69,7 +69,7 @@ pub struct EntityInfo {
 pub trait Entity: Any {
     fn initialize<'a>(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _context: &'a mut Context,
         _world: &mut World<'a>,
     ) -> anyhow::Result<()> {
@@ -85,39 +85,63 @@ pub trait Entity: Any {
 
     fn draw_r3d(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn draw_3d(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn draw_2d(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn tick(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _handle: &mut RaylibHandle,
         _world: &mut World,
     ) -> anyhow::Result<()> {
         Ok(())
     }
+
     fn touch(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+        _other: &mut Box<dyn Entity>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn interact(
+        &mut self,
+        _app: &mut App,
+        _handle: &mut RaylibHandle,
+        _world: &mut World,
+        _other: &mut Box<dyn Entity>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn damage(
+        &mut self,
+        _app: &mut App,
         _handle: &mut RaylibHandle,
         _world: &mut World,
         _other: &mut Box<dyn Entity>,

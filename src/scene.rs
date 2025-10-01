@@ -54,10 +54,10 @@ use raylib::prelude::*;
 
 //================================================================
 
+use crate::app::*;
 use crate::asset::*;
 use crate::external::r3d::*;
 use crate::physical::*;
-use crate::state::*;
 use crate::utility::*;
 
 //================================================================
@@ -115,11 +115,12 @@ impl<'a> Scene<'a> {
     //}
 
     pub fn room_active(&self, point: Vector3) -> bool {
-        if let Some((_, collider)) = self.physical.cast_point(
+        if let Some((_, collider)) = self.physical.intersect_point(
             point,
+            None,
             QueryFilter::default()
                 .exclude_solids()
-                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+                .groups(Physical::GROUP_GEOMETRY),
         ) {
             self.room_list[collider.user_data as usize].visible
         } else {
@@ -132,9 +133,10 @@ impl<'a> Scene<'a> {
             point,
             angle,
             shape,
+            None,
             QueryFilter::default()
                 .exclude_solids()
-                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+                .groups(Physical::GROUP_GEOMETRY),
         ) {
             self.room_list[collider.user_data as usize].visible
         } else {
@@ -143,11 +145,12 @@ impl<'a> Scene<'a> {
     }
 
     pub fn room_active_index(&self, point: Vector3) -> Option<usize> {
-        if let Some((_, collider)) = self.physical.cast_point(
+        if let Some((_, collider)) = self.physical.intersect_point(
             point,
+            None,
             QueryFilter::default()
                 .exclude_solids()
-                .groups(InteractionGroups::new(Group::GROUP_32, Group::GROUP_32)),
+                .groups(Physical::GROUP_GEOMETRY),
         ) {
             Some(collider.user_data as usize)
         } else {
@@ -155,12 +158,30 @@ impl<'a> Scene<'a> {
         }
     }
 
-    pub fn initialize(&mut self, context: &mut Context) -> anyhow::Result<()> {
-        self.texture = Some(
-            context
-                .handle
-                .load_render_texture(&context.thread, 1024, 768)?,
+    pub fn update_resolution(&mut self, context: &mut Context, scale: f32) -> anyhow::Result<()> {
+        let size = Vector2::new(
+            context.handle.get_screen_width() as f32 * scale,
+            context.handle.get_screen_height() as f32 * scale,
         );
+
+        context
+            .r3d
+            .update_resolution((size.x as i32, size.y as i32));
+        self.texture = Some(context.handle.load_render_texture(
+            &context.thread,
+            size.x as u32,
+            size.y as u32,
+        )?);
+
+        Ok(())
+    }
+
+    pub fn initialize(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
+        self.texture = Some(context.handle.load_render_texture(
+            &context.thread,
+            (context.handle.get_screen_width() as f32 * app.user.video_scale) as u32,
+            (context.handle.get_screen_height() as f32 * app.user.video_scale) as u32,
+        )?);
 
         self.asset.set_shader(
             context,
@@ -245,10 +266,8 @@ impl<'a> Scene<'a> {
         self.physical.set_collider_sensor(collider, true)?;
         self.physical
             .set_collider_data(collider, self.room_list.len() as u128)?;
-        self.physical.set_collider_group(
-            collider,
-            InteractionGroups::new(Group::GROUP_32, Group::GROUP_32),
-        )?;
+        self.physical
+            .set_collider_group(collider, Physical::GROUP_GEOMETRY)?;
 
         self.physical.new_model(&model.model, self.room_rigid)?;
 
@@ -281,7 +300,7 @@ impl<'a> Scene<'a> {
 
     pub fn sound_play(
         &mut self,
-        state: &State,
+        app: &App,
         path: &str,
         point: Option<Vector3>,
     ) -> anyhow::Result<()> {
@@ -292,10 +311,10 @@ impl<'a> Scene<'a> {
                 if !alias.is_playing() {
                     if let Some(point) = point {
                         let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
-                        alias.set_volume(distance * state.user.volume_sound);
+                        alias.set_volume(distance * app.user.audio_sound);
                         alias.set_pan(pan);
                     } else {
-                        alias.set_volume(state.user.volume_sound);
+                        alias.set_volume(app.user.audio_sound);
                     }
 
                     alias.play();
@@ -315,10 +334,10 @@ impl<'a> Scene<'a> {
         // TO-DO cull sound if not even audible?
         if let Some(point) = point {
             let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
-            sound.sound.set_volume(distance * state.user.volume_sound);
+            sound.sound.set_volume(distance * app.user.audio_sound);
             sound.sound.set_pan(pan);
         } else {
-            sound.sound.set_volume(state.user.volume_sound);
+            sound.sound.set_volume(app.user.audio_sound);
         }
 
         sound.sound.play();
@@ -347,7 +366,11 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn update(&mut self, state: &State) -> anyhow::Result<()> {
+    pub fn update(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
+        if context.handle.is_window_resized() {
+            self.update_resolution(context, app.user.video_scale)?;
+        }
+
         if self.pause {
             return Ok(());
         }
@@ -359,15 +382,15 @@ impl<'a> Scene<'a> {
 
                 if let Some(alias) = noise.alias {
                     let alias = sound.alias.get(alias).unwrap();
-                    alias.set_volume(distance * state.user.volume_sound);
+                    alias.set_volume(distance * app.user.audio_sound);
                     alias.set_pan(pan);
                 } else {
-                    sound.sound.set_volume(distance * state.user.volume_sound);
+                    sound.sound.set_volume(distance * app.user.audio_sound);
                     sound.sound.set_pan(pan);
                 }
             } else {
                 // TO-DO check with raylib if setting the volume each frame is bad or not?
-                sound.sound.set_volume(state.user.volume_sound);
+                sound.sound.set_volume(app.user.audio_sound);
             }
         }
 
@@ -407,22 +430,6 @@ impl<'a> Scene<'a> {
         context: &mut Context,
         mut call: F,
     ) -> anyhow::Result<()> {
-        if context.handle.is_window_resized() {
-            let size = Vector2::new(
-                context.handle.get_screen_width() as f32 / 2.0,
-                context.handle.get_screen_height() as f32 / 2.0,
-            );
-
-            context
-                .r3d
-                .update_resolution((size.x as i32, size.y as i32));
-            self.texture = Some(context.handle.load_render_texture(
-                &context.thread,
-                size.x as u32,
-                size.y as u32,
-            )?);
-        }
-
         let scene = { self as *mut Self };
 
         let texture = self.texture.as_mut().unwrap();
@@ -441,17 +448,15 @@ impl<'a> Scene<'a> {
                         let model = self.asset.get_model(&room.path).unwrap();
                         model.model.draw(r3d, Vector3::zero(), 1.0);
                     }
-                } else {
-                    if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
-                        Room::traverse(
-                            room,
-                            r3d,
-                            &self.view_list,
-                            &mut self.room_list,
-                            &mut self.asset,
-                            true,
-                        );
-                    }
+                } else if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
+                    Room::traverse(
+                        room,
+                        r3d,
+                        &self.view_list,
+                        &mut self.room_list,
+                        &mut self.asset,
+                        true,
+                    );
                 }
             }
 
@@ -475,8 +480,6 @@ impl<'a> Scene<'a> {
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
-
-        draw.draw_cube_v(Vector3::zero(), Vector3::one(), Color::RED);
 
         //self.physical.draw();
 
@@ -579,7 +582,7 @@ impl<'a> Room {
 
         current_room.visit = true;
 
-        if current_room.is_visible(handle, view_list) || inside {
+        if current_room.is_visible(view_list) || inside {
             current_room.visible = true;
 
             let model = asset.get_model(&current_room.path).unwrap();
@@ -597,25 +600,13 @@ impl<'a> Room {
         }
     }
 
-    fn is_camera_inside(&self, camera: Camera3D) -> bool {
-        let shape = Cuboid::new(vector![self.scale.x, self.scale.y, self.scale.z]);
-
-        shape.contains_point(
-            &Isometry::new(
-                vector![self.point.x, self.point.y, self.point.z],
-                vector![0.0, 0.0, 0.0],
-            ),
-            &point![camera.position.x, camera.position.y, camera.position.z],
-        )
-    }
-
-    fn is_visible(&self, handle: &Handle, view_list: &[View]) -> bool {
+    fn is_visible(&self, view_list: &[View]) -> bool {
         if self.view.is_empty() {
             return true;
         }
 
         for view in &self.view {
-            if view_list[*view].is_visible(handle) {
+            if view_list[*view].visible {
                 return true;
             }
         }
@@ -636,14 +627,6 @@ pub struct View {
 
 //================================================================
 
-impl View {
-    fn is_visible(&self, handle: &Handle) -> bool {
-        self.visible
-    }
-}
-
-//================================================================
-
 struct Noise {
     point: Option<Vector3>,
     range: f32,
@@ -651,6 +634,6 @@ struct Noise {
     path: String,
 }
 
-struct Path {
+pub struct Path {
     point: Vector3,
 }

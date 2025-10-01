@@ -48,10 +48,11 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::entity::implementation::*;
 use crate::external::r3d::*;
-use crate::state::*;
 use crate::utility::*;
+use crate::window::Window;
 use crate::world::*;
 
 //================================================================
@@ -67,6 +68,8 @@ pub struct Light {
     angle: Vector3,
     mode: LightType,
     color: Color,
+    #[serde(skip)]
+    focus: bool,
     #[serde(skip)]
     handle: Option<crate::external::r3d::Light>,
     #[serde(skip)]
@@ -86,7 +89,7 @@ impl Entity for Light {
 
     fn initialize(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
@@ -110,7 +113,7 @@ impl Entity for Light {
 
     fn draw_r3d(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
@@ -125,9 +128,102 @@ impl Entity for Light {
         Ok(())
     }
 
+    fn draw_3d(
+        &mut self,
+        _app: &mut App,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
+
+        Ok(())
+    }
+
+    #[rustfmt::skip]
+    fn draw_2d(
+        &mut self,
+        app: &mut App,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        let focus = self.focus;
+
+        if self.focus {
+            Window::draw(app, draw, |app, draw| {
+                let handle = self.handle.as_mut().unwrap();
+                let color = handle.get_color();
+                let mut energy = handle.get_energy();
+                let mut range = handle.get_range();
+                let mut attenuation = handle.get_attenuation();
+                let mut r = color.r as f32;
+                let mut g = color.g as f32;
+                let mut b = color.b as f32;
+
+                app.window.slider(draw, "Color (R)", &mut r, (0.0, 255.0), 1.0)?;
+                app.window.slider(draw, "Color (G)", &mut g, (0.0, 255.0), 1.0)?;
+                app.window.slider(draw, "Color (B)", &mut b, (0.0, 255.0), 1.0)?;
+                app.window.slider(draw, "Energy", &mut energy, (0.0, 4.0), 0.1)?;
+                app.window.slider(draw, "Range", &mut range, (0.0, 64.0), 1.0)?;
+                app.window.slider(draw, "Attenuation", &mut attenuation, (0.0, 4.0), 0.1)?;
+
+                handle.set_energy(energy);
+
+                handle.set_color(Color::new(r as u8, g as u8, b as u8, 255));
+                handle.set_energy(energy);
+                handle.set_range(range);
+                handle.set_attenuation(attenuation);
+
+                let x_a = draw.is_key_pressed(KeyboardKey::KEY_W) || draw.is_key_pressed_repeat(KeyboardKey::KEY_W);
+                let x_b = draw.is_key_pressed(KeyboardKey::KEY_S) || draw.is_key_pressed_repeat(KeyboardKey::KEY_S);
+                let y_a = draw.is_key_pressed(KeyboardKey::KEY_Z) || draw.is_key_pressed_repeat(KeyboardKey::KEY_Z);
+                let y_b = draw.is_key_pressed(KeyboardKey::KEY_C) || draw.is_key_pressed_repeat(KeyboardKey::KEY_C);
+                let z_a = draw.is_key_pressed(KeyboardKey::KEY_A) || draw.is_key_pressed_repeat(KeyboardKey::KEY_A);
+                let z_b = draw.is_key_pressed(KeyboardKey::KEY_D) || draw.is_key_pressed_repeat(KeyboardKey::KEY_D);
+
+                let mut point = self.point;
+
+                point.x += if x_a { 1.0 } else if x_b { -1.0 } else { 0.0 };
+                point.y += if y_a { 1.0 } else if y_b { -1.0 } else { 0.0 };
+                point.z += if z_a { 1.0 } else if z_b { -1.0 } else { 0.0 };
+
+                self.point = point;
+                handle.set_position(point);
+
+                if draw.is_key_pressed(KeyboardKey::KEY_Q) {
+                    self.focus = false;
+                    // TO-DO make this happen automatically on set_device
+                    draw.disable_cursor();
+                };
+                Ok(())
+            })?;
+        }
+
+        let ray = Ray::new(
+            world.scene.camera_3d.position,
+            world.scene.camera_3d.target - world.scene.camera_3d.position,
+        );
+
+        let bound = BoundingBox::new(
+            self.point + Vector3::one() * 0.25 * -1.0,
+            self.point + Vector3::one() * 0.25,
+        );
+
+        let collision = bound.get_ray_collision_box(ray);
+
+        if collision.hit && collision.distance <= 8.0
+            && draw.is_key_pressed(KeyboardKey::KEY_Q) && !focus {
+                self.focus = true;
+                app.window.set_device(crate::window::Device::Mouse { lock: true });
+                // TO-DO make this happen automatically on set_device
+                draw.enable_cursor();
+            }
+
+        Ok(())
+    }
+
     fn tick(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         _handle: &mut RaylibHandle,
         _world: &mut World,
     ) -> anyhow::Result<()> {

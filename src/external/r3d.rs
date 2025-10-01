@@ -12,98 +12,98 @@ mod ffi {
     include!(concat!(env!("OUT_DIR"), "/r3d_bind.rs"));
 }
 
-impl Into<ffi::Vector3> for Vector3 {
-    fn into(self) -> ffi::Vector3 {
+impl From<Vector3> for ffi::Vector3 {
+    fn from(val: Vector3) -> Self {
         ffi::Vector3 {
-            x: self.x,
-            y: self.y,
-            z: self.z,
+            x: val.x,
+            y: val.y,
+            z: val.z,
         }
     }
 }
 
-impl Into<ffi::Matrix> for Matrix {
-    fn into(self) -> ffi::Matrix {
-        unsafe { std::mem::transmute(self) }
+impl From<Matrix> for ffi::Matrix {
+    fn from(val: Matrix) -> Self {
+        unsafe { std::mem::transmute(val) }
     }
 }
 
-impl Into<Matrix> for ffi::Matrix {
-    fn into(self) -> Matrix {
-        unsafe { std::mem::transmute(self) }
+impl From<ffi::Matrix> for Matrix {
+    fn from(val: ffi::Matrix) -> Self {
+        unsafe { std::mem::transmute(val) }
     }
 }
 
-impl Into<ffi::Transform> for Transform {
-    fn into(self) -> ffi::Transform {
-        unsafe { std::mem::transmute(self) }
+impl From<Transform> for ffi::Transform {
+    fn from(val: Transform) -> Self {
+        unsafe { std::mem::transmute(val) }
     }
 }
 
-impl Into<Transform> for ffi::Transform {
-    fn into(self) -> Transform {
-        unsafe { std::mem::transmute(self) }
+impl From<ffi::Transform> for Transform {
+    fn from(val: ffi::Transform) -> Self {
+        unsafe { std::mem::transmute(val) }
     }
 }
 
-impl Into<BoundingBox> for ffi::BoundingBox {
-    fn into(self) -> BoundingBox {
+impl From<ffi::BoundingBox> for BoundingBox {
+    fn from(val: ffi::BoundingBox) -> Self {
         BoundingBox {
-            min: self.min.into(),
-            max: self.max.into(),
+            min: val.min.into(),
+            max: val.max.into(),
         }
     }
 }
 
-impl Into<ffi::BoundingBox> for BoundingBox {
-    fn into(self) -> ffi::BoundingBox {
+impl From<BoundingBox> for ffi::BoundingBox {
+    fn from(val: BoundingBox) -> Self {
         ffi::BoundingBox {
-            min: self.min.into(),
-            max: self.max.into(),
+            min: val.min.into(),
+            max: val.max.into(),
         }
     }
 }
 
-impl Into<Vector3> for ffi::Vector3 {
-    fn into(self) -> Vector3 {
+impl From<ffi::Vector3> for Vector3 {
+    fn from(val: ffi::Vector3) -> Self {
         Vector3 {
-            x: self.x,
-            y: self.y,
-            z: self.z,
+            x: val.x,
+            y: val.y,
+            z: val.z,
         }
     }
 }
 
-impl Into<ffi::Camera3D> for Camera3D {
-    fn into(self) -> ffi::Camera3D {
+impl From<Camera3D> for ffi::Camera3D {
+    fn from(val: Camera3D) -> Self {
         ffi::Camera3D {
-            position: self.position.into(),
-            target: self.target.into(),
-            up: self.up.into(),
-            fovy: self.fovy,
-            projection: self.camera_type() as i32,
+            position: val.position.into(),
+            target: val.target.into(),
+            up: val.up.into(),
+            fovy: val.fovy,
+            projection: val.camera_type() as i32,
         }
     }
 }
 
-impl Into<ffi::Color> for Color {
-    fn into(self) -> ffi::Color {
+impl From<Color> for ffi::Color {
+    fn from(val: Color) -> Self {
         ffi::Color {
-            r: self.r,
-            g: self.g,
-            b: self.b,
-            a: self.a,
+            r: val.r,
+            g: val.g,
+            b: val.b,
+            a: val.a,
         }
     }
 }
 
-impl Into<Color> for ffi::Color {
-    fn into(self) -> Color {
+impl From<ffi::Color> for Color {
+    fn from(val: ffi::Color) -> Self {
         Color {
-            r: self.r,
-            g: self.g,
-            b: self.b,
-            a: self.a,
+            r: val.r,
+            g: val.g,
+            b: val.b,
+            a: val.a,
         }
     }
 }
@@ -215,6 +215,26 @@ impl Handle {
 
     pub fn is_bounding_box_in_frustum(&self, bounding_box: BoundingBox) -> bool {
         unsafe { ffi::R3D_IsAABBInFrustum(bounding_box.into()) }
+    }
+
+    pub fn get_brightness(&self) -> f32 {
+        unsafe { ffi::R3D_GetBrightness() }
+    }
+
+    pub fn set_brightness(&self, value: f32) {
+        unsafe {
+            ffi::R3D_SetBrightness(value);
+        }
+    }
+
+    pub fn get_contrast(&self) -> f32 {
+        unsafe { ffi::R3D_GetContrast() }
+    }
+
+    pub fn set_contrast(&self, value: f32) {
+        unsafe {
+            ffi::R3D_SetContrast(value);
+        }
     }
 }
 
@@ -534,6 +554,7 @@ impl Vertex {
     }
 }
 
+// shouldn't inner be a reference?
 pub struct Mesh {
     inner: ffi::R3D_Mesh,
     weak: bool,
@@ -541,7 +562,7 @@ pub struct Mesh {
 
 impl Mesh {
     pub fn generate_cube(
-        handle: &mut Handle,
+        _handle: &mut Handle,
         width: f32,
         height: f32,
         length: f32,
@@ -583,11 +604,11 @@ impl Mesh {
     }
 
     pub fn vertex_count(&self) -> i32 {
-        self.inner.vertexCount as i32
+        self.inner.vertexCount
     }
 
     pub fn index_count(&self) -> i32 {
-        self.inner.indexCount as i32
+        self.inner.indexCount
     }
 }
 
@@ -607,7 +628,7 @@ pub struct Model {
 }
 
 impl Model {
-    pub fn load_from_mesh(handle: &mut Handle, mesh: &mut Mesh) -> Self {
+    pub fn load_from_mesh(_handle: &mut Handle, mesh: &mut Mesh) -> Self {
         mesh.weak = true;
 
         let inner = unsafe { ffi::R3D_LoadModelFromMesh(&mesh.inner) };
@@ -675,6 +696,10 @@ impl Model {
         }
     }
 
+    pub fn material_count(&self) -> i32 {
+        self.inner.materialCount
+    }
+
     pub fn get_bounding_box(&self) -> BoundingBox {
         self.inner.aabb.into()
     }
@@ -702,6 +727,20 @@ impl Model {
             )
             .iter()
             .map(|x| Mesh::from_raw_weak(*x))
+            .collect();
+
+            vector
+        }
+    }
+
+    pub fn materials(&mut self) -> Vec<Material> {
+        unsafe {
+            let vector: Vec<Material> = std::slice::from_raw_parts_mut(
+                self.inner.materials,
+                self.inner.materialCount as usize,
+            )
+            .iter_mut()
+            .map(|x| Material::from_raw_weak(x))
             .collect();
 
             vector
@@ -844,4 +883,47 @@ impl Drop for ModelAnimationList {
 
 fn rust_to_c_string(text: &str) -> CString {
     CString::new(text).unwrap()
+}
+
+pub struct Material {
+    inner: *mut ffi::R3D_Material,
+    weak: bool,
+}
+
+impl Material {
+    pub fn get_albedo(&self) -> MapAlbedo {
+        unsafe {
+            MapAlbedo {
+                inner: &mut (*self.inner).albedo,
+            }
+        }
+    }
+
+    pub fn from_raw_weak(inner: *mut ffi::R3D_Material) -> Self {
+        Self { inner, weak: true }
+    }
+}
+
+pub struct MapAlbedo {
+    inner: *mut ffi::R3D_Material_R3D_MapAlbedo,
+}
+
+impl MapAlbedo {
+    pub fn get_texture(&self) -> WeakTexture2D {
+        unsafe {
+            let texture = (*self.inner).texture;
+            let texture = std::mem::transmute(texture);
+            Texture2D::from_raw(texture).make_weak()
+        }
+    }
+
+    pub fn set_texture(&self, texture: &Texture2D) {
+        unsafe {
+            (*self.inner).texture.id = texture.id;
+            (*self.inner).texture.width = texture.width;
+            (*self.inner).texture.height = texture.height;
+            (*self.inner).texture.mipmaps = texture.mipmaps;
+            (*self.inner).texture.format = texture.format;
+        }
+    }
 }

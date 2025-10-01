@@ -48,10 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::entity::implementation::*;
-use crate::physical::*;
 use crate::scene::*;
-use crate::state::*;
 
 //================================================================
 
@@ -80,9 +79,10 @@ pub struct World<'a> {
 }
 
 impl<'a> World<'a> {
-    pub const TIME_STEP: f32 = 1.0 / 60.0;
+    pub const TIME_STEP: f32 = 1.0 / 144.0;
 
-    pub fn new(state: &mut State, context: &mut Context, path: &str) -> anyhow::Result<Self> {
+    pub fn new(app: &mut App, context: &mut Context) -> anyhow::Result<Self> {
+        let path = "tutorial";
         let file = &format!("data/level/{path}/{path}.json");
         let file = std::fs::read_to_string(file)?;
         let mut file: Self = serde_json::from_str(&file)?;
@@ -102,11 +102,11 @@ impl<'a> World<'a> {
             for entity in &mut file.entity_list {
                 file.entity_index += 1;
                 entity.get_info_mutable().index = file.entity_index - 1;
-                entity.initialize(state, &mut *ctx, &mut *world)?;
+                entity.initialize(app, &mut *ctx, &mut *world)?;
             }
         }
 
-        file.scene.initialize(context)?;
+        file.scene.initialize(app, context)?;
 
         Ok(file)
     }
@@ -154,12 +154,12 @@ impl<'a> World<'a> {
 
     pub fn main(
         &mut self,
-        state: &mut State,
+        app: &mut App,
         draw: &mut RaylibDrawHandle<'_>,
         context: &mut Context,
     ) -> anyhow::Result<()> {
         let world = self as *mut Self;
-        let pause = state.layout.is_some();
+        let pause = app.layout.is_some();
 
         if !pause {
             let frame_time = context.handle.get_frame_time().min(0.25);
@@ -181,7 +181,7 @@ impl<'a> World<'a> {
 
                 unsafe {
                     for entity in &mut self.entity_list {
-                        entity.tick(state, &mut context.handle, &mut *world)?;
+                        entity.tick(app, &mut context.handle, &mut *world)?;
                     }
                 }
 
@@ -197,7 +197,7 @@ impl<'a> World<'a> {
             }
         }
 
-        self.scene.update(state)?;
+        self.scene.update(app, context)?;
 
         unsafe {
             let context = context as *mut Context;
@@ -205,7 +205,7 @@ impl<'a> World<'a> {
             if !pause {
                 self.scene.draw_r3d(&mut *context, |_| {
                     for entity in &mut self.entity_list {
-                        entity.draw_r3d(state, &mut *context, &mut *world)?;
+                        entity.draw_r3d(app, &mut *context, &mut *world)?;
                     }
 
                     Ok(())
@@ -213,7 +213,7 @@ impl<'a> World<'a> {
 
                 self.scene.draw_3d(&mut *context, draw, |draw| {
                     for entity in &mut self.entity_list {
-                        entity.draw_3d(state, draw, &mut *world)?;
+                        entity.draw_3d(app, draw, &mut *world)?;
                     }
 
                     Ok(())
@@ -223,7 +223,7 @@ impl<'a> World<'a> {
             self.scene.draw_2d(&mut *context, draw, |draw| {
                 if !pause {
                     for entity in &mut self.entity_list {
-                        entity.draw_2d(state, draw, &mut *world)?;
+                        entity.draw_2d(app, draw, &mut *world)?;
                     }
                 }
 

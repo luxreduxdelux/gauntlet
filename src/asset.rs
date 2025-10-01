@@ -48,7 +48,7 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::state::*;
+use crate::app::*;
 
 //================================================================
 
@@ -58,17 +58,27 @@ use serde::Deserialize;
 
 //================================================================
 
+/// Asset resource manager.
 #[derive(Default)]
 pub struct Asset<'a> {
+    /// Model hash-map.
     model: HashMap<String, AssetModel>,
+    /// Texture hash-map.
     texture: HashMap<String, Texture2D>,
+    /// Shader hash-map.
     shader: HashMap<String, Shader>,
+    /// Sound hash-map.
     sound: HashMap<String, AssetSound<'a>>,
+    /// Music hash-map.
     music: HashMap<String, Music<'a>>,
+    /// Font hash-map.
     font: HashMap<String, Font>,
 }
 
 impl<'a> Asset<'a> {
+    const ANIMATION_BASE_FRAME_RATE: i32 = 60;
+
+    /// Create a new model.
     pub fn set_model(
         &mut self,
         context: &mut Context,
@@ -78,51 +88,50 @@ impl<'a> Asset<'a> {
             return self.get_model(name);
         }
 
-        let model = crate::external::r3d::Model::new(&mut context.r3d, name);
-        let animation = crate::external::r3d::ModelAnimationList::new(&mut context.r3d, name, 60);
+        let mut model = crate::external::r3d::Model::new(&mut context.r3d, name);
+        let animation = crate::external::r3d::ModelAnimationList::new(
+            &mut context.r3d,
+            name,
+            Self::ANIMATION_BASE_FRAME_RATE,
+        );
+        let meta = ModelMeta::new(name)?;
 
-        let name_event: Vec<&str> = name.split(".").collect();
-        let event = AnimationEventMap::new(&format!("{}.animation", name_event[0]))?;
+        if let Some(texture) = &meta.texture {
+            let material = model.materials();
 
-        /*
-        // create mip-map.
-        for material in model.materials_mut() {
-            for map in material.maps_mut() {
-                let texture = map.texture_mut();
-
-                if texture.id > 0 {
-                    texture.gen_texture_mipmaps();
-                    texture
-                        .set_texture_filter(&context.thread, TextureFilter::TEXTURE_FILTER_POINT);
-                }
+            for (i, path) in texture.iter().enumerate() {
+                let texture = self.set_texture(context, &format!("data/{path}"))?;
+                material[i].get_albedo().set_texture(texture);
             }
         }
-        */
 
         self.model.insert(
             name.to_string(),
             AssetModel {
                 model,
                 animation,
-                event,
+                event: ModelEvent::from_model_meta(meta),
             },
         );
 
         self.get_model(name)
     }
 
+    /// Get a model.
     pub fn get_model(&mut self, name: &str) -> anyhow::Result<&mut AssetModel> {
         self.model.get_mut(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_model(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a model.
     pub fn has_model(&self, name: &str) -> bool {
         self.model.contains_key(name)
     }
 
     //================================================================
 
+    /// Create a new texture.
     pub fn set_texture(
         &mut self,
         context: &mut Context,
@@ -132,31 +141,34 @@ impl<'a> Asset<'a> {
             return self.get_texture(name);
         }
 
-        let texture = context.handle.load_texture(&mut context.thread, name)?;
+        let texture = context.handle.load_texture(&context.thread, name)?;
 
         self.texture.insert(name.to_string(), texture);
 
         self.get_texture(name)
     }
 
+    /// Get a texture.
     pub fn get_texture(&mut self, name: &str) -> anyhow::Result<&mut Texture2D> {
         self.texture.get_mut(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_texture(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a texture.
     pub fn has_texture(&self, name: &str) -> bool {
         self.texture.contains_key(name)
     }
 
     //================================================================
 
+    /// Create a shader.
     pub fn set_shader(
         &mut self,
         context: &mut Context,
         name: &str,
-        vs_path: Option<&str>,
-        fs_path: Option<&str>,
+        path_vs: Option<&str>,
+        path_fs: Option<&str>,
     ) -> anyhow::Result<&mut Shader> {
         if self.has_shader(name) {
             return self.get_shader(name);
@@ -164,25 +176,28 @@ impl<'a> Asset<'a> {
 
         let shader = context
             .handle
-            .load_shader(&context.thread, vs_path, fs_path);
+            .load_shader(&context.thread, path_vs, path_fs);
 
         self.shader.insert(name.to_string(), shader);
 
         self.get_shader(name)
     }
 
+    /// Get a shader.
     pub fn get_shader(&mut self, name: &str) -> anyhow::Result<&mut Shader> {
         self.shader.get_mut(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_shader(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a shader.
     pub fn has_shader(&self, name: &str) -> bool {
         self.shader.contains_key(name)
     }
 
     //================================================================
 
+    /// Create a sound handle.
     pub fn set_sound(
         &mut self,
         context: &'a Context,
@@ -211,18 +226,21 @@ impl<'a> Asset<'a> {
         self.get_sound(name)
     }
 
+    /// Get a sound handle.
     pub fn get_sound(&self, name: &str) -> anyhow::Result<&AssetSound<'a>> {
         self.sound.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_sound(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a sound.
     pub fn has_sound(&self, name: &str) -> bool {
         self.sound.contains_key(name)
     }
 
     //================================================================
 
+    /// Create a music handle.
     pub fn set_music(&mut self, context: &'a Context, name: &str) -> anyhow::Result<&Music<'a>> {
         if self.has_music(name) {
             return self.get_music(name);
@@ -235,18 +253,21 @@ impl<'a> Asset<'a> {
         self.get_music(name)
     }
 
+    /// Get a music handle.
     pub fn get_music(&self, name: &str) -> anyhow::Result<&Music<'a>> {
         self.music.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_music(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a music.
     pub fn has_music(&self, name: &str) -> bool {
         self.music.contains_key(name)
     }
 
     //================================================================
 
+    /// Create a font.
     pub fn set_font(
         &mut self,
         context: &mut Context,
@@ -266,12 +287,14 @@ impl<'a> Asset<'a> {
         self.get_font(name)
     }
 
+    /// Get a font.
     pub fn get_font(&self, name: &str) -> anyhow::Result<&Font> {
         self.font.get(name).ok_or(anyhow::Error::msg(format!(
             "Asset::get_font(): Could not find asset \"{name}\"."
         )))
     }
 
+    /// Check if the resource map has a font.
     pub fn has_font(&self, name: &str) -> bool {
         self.font.contains_key(name)
     }
@@ -285,24 +308,54 @@ impl Drop for Asset<'_> {
 
 //================================================================
 
+/// A 3D model.
+pub struct AssetModel {
+    /// Handle to the R3D model data.
+    pub model: crate::external::r3d::Model,
+    /// Handle to the R3D model animation data.
+    pub animation: crate::external::r3d::ModelAnimationList,
+    /// Model-specific animation event data.
+    pub event: ModelEvent,
+}
+
+/// Model animation event data.
+#[derive(Debug, Deserialize, Default)]
+pub struct ModelEvent {
+    pub map: HashMap<String, HashMap<i32, AnimationEvent>>,
+}
+
+impl ModelEvent {
+    fn from_model_meta(meta: ModelMeta) -> Self {
+        if let Some(animation) = meta.event {
+            Self { map: animation }
+        } else {
+            Self::default()
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
 pub enum AnimationEvent {
     Sound { path: String },
-    Custom(std::collections::HashMap<String, serde_json::Value>),
+    Custom(HashMap<String, serde_json::Value>),
 }
 
 #[derive(Debug, Deserialize, Default)]
-pub struct AnimationEventMap {
-    pub map: std::collections::HashMap<String, std::collections::HashMap<i32, AnimationEvent>>,
+struct ModelMeta {
+    texture: Option<Vec<String>>,
+    event: Option<HashMap<String, HashMap<i32, AnimationEvent>>>,
 }
 
-impl AnimationEventMap {
-    fn new(path: &str) -> anyhow::Result<Self> {
-        if std::fs::exists(path)? {
-            let map = serde_json::from_str(&std::fs::read_to_string(path)?)?;
+impl ModelMeta {
+    const FILE_EXTENSION: &str = "meta";
 
-            Ok(Self { map })
+    fn new(path: &str) -> anyhow::Result<Self> {
+        let path: Vec<&str> = path.split(".").collect();
+        let path = format!("{}.{}", path[0], Self::FILE_EXTENSION);
+
+        if std::fs::exists(&path)? {
+            Ok(serde_json::from_str(&std::fs::read_to_string(path)?)?)
         } else {
             Ok(Self::default())
         }
@@ -311,13 +364,10 @@ impl AnimationEventMap {
 
 //================================================================
 
-pub struct AssetModel {
-    pub model: crate::external::r3d::Model,
-    pub animation: crate::external::r3d::ModelAnimationList,
-    pub event: AnimationEventMap,
-}
-
+/// A sound.
 pub struct AssetSound<'a> {
+    /// Handle to the sound data.
     pub sound: Sound<'a>,
+    /// Sound alias list, for playing back more than one sound at a time.
     pub alias: Vec<SoundAlias<'a, 'a>>,
 }

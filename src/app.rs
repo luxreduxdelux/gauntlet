@@ -49,8 +49,8 @@
 */
 
 use crate::external::*;
-use crate::locale::Locale;
 use crate::user::*;
+use crate::utility::*;
 use crate::window::*;
 use crate::world::*;
 
@@ -60,91 +60,103 @@ use raylib::prelude::*;
 
 //================================================================
 
+/// The main app state.
 #[derive(Default)]
-pub struct State<'a> {
+pub struct App<'a> {
+    /// Whether or not to close the app.
     pub close: bool,
+    /// Active game world, if any.
     pub world: Option<World<'a>>,
+    /// User interface.
     pub window: Window<'a>,
+    /// User interface layout.
     pub layout: Option<Layout>,
-    pub locale: Locale,
+    /// User configuration.
     pub user: User,
 }
 
-impl<'a> State<'a> {
+impl<'a> App<'a> {
     pub const VERSION: &'a str = env!("CARGO_PKG_VERSION");
 
-    pub fn error(result: anyhow::Result<()>) {
-        if let Err(error) = result {
-            let e = error.to_string();
+    /// The app's main loop.
+    pub fn main() -> anyhow::Result<()> {
+        // Set panic hook and backtrace for debugging.
+        unsafe {
+            std::env::set_var("RUST_BACKTRACE", "1");
 
-            std::thread::spawn(move || {
-                rfd::MessageDialog::new()
-                    .set_level(rfd::MessageLevel::Error)
-                    .set_title("Fatal Error")
-                    .set_description(e)
-                    .show();
-            });
+            std::panic::set_hook(Box::new(|panic_info| {
+                let time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap();
+                let file = format!("panic_{time:?}");
+                std::fs::write(&file, panic_info.to_string()).unwrap();
+                error_message(&format!(
+                    "Fatal error! The log \"{file}\" has been written to your game's root directory."
+                ));
 
-            panic!("{:?}", error);
+                eprintln!("{panic_info}");
+            }));
         }
-    }
 
-    pub fn error_string(text: &str) {
-        let e = text.to_string();
+        //================================================================
 
-        std::thread::spawn(move || {
-            rfd::MessageDialog::new()
-                .set_level(rfd::MessageLevel::Error)
-                .set_title("Fatal Error")
-                .set_description(e)
-                .show();
-        });
-    }
+        let mut context = Context::new()?;
+        let mut app = Self::default();
 
-    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
-        self.layout = Some(Layout::Main);
-        self.window.initialize(context)?;
-        self.locale = Locale::new(self.user.locale_kind);
+        //================================================================
 
-        Ok(())
-    }
+        context.apply_user(&app.user);
 
-    pub fn new_game(&mut self, context: &mut Context) -> anyhow::Result<()> {
-        context.handle.disable_cursor();
+        unsafe {
+            let context = &mut context as *mut Context;
+            app.initialize(&mut *context)?;
+        };
 
-        self.layout = None;
-        self.world = Some(World::new(self, context, "tutorial")?);
+        //================================================================
 
-        Ok(())
-    }
-
-    pub fn main(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
-        while !context.handle.window_should_close() && !self.close {
-            let ctx = { context as *mut Context };
+        // Run loop for as long as window should be open and the user hasn't sent a close signal.
+        while !context.handle.window_should_close() && !app.close {
+            let ctx = { &mut context as *mut Context };
 
             unsafe {
-                if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F1) {
-                    *self = State::default();
-                    self.initialize(&mut *ctx)?;
+                if context.handle.is_key_pressed(KeyboardKey::KEY_F1) {
+                    app = Self::default();
+                    app.initialize(&mut *ctx)?;
                 }
 
-                if (*ctx).handle.is_key_pressed(KeyboardKey::KEY_F2) {
-                    self.new_game(context)?;
+                if context.handle.is_key_pressed(KeyboardKey::KEY_F2) {
+                    app.new_world(&mut context)?;
                 }
 
                 let mut draw = context.handle.begin_drawing(&context.thread);
 
-                draw.clear_background(Color::WHITE);
+                let app = &mut app as *mut Self;
 
-                let state = self as *mut Self;
-
-                if let Some(world) = &mut self.world {
-                    world.main(&mut *state, &mut draw, &mut *ctx)?;
+                if let Some(world) = &mut (*app).world {
+                    world.main(&mut *app, &mut draw, &mut *ctx)?;
                 }
 
-                Layout::draw(self, &mut draw, &mut *ctx)?;
+                Layout::draw(&mut *app, &mut draw, &mut *ctx)?;
             }
         }
+
+        Ok(())
+    }
+
+    /// Initialize the app proper after context is ready.
+    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
+        let state = { self as *const Self };
+
+        self.layout = Some(Layout::Main);
+        self.window.initialize(unsafe { &*state }, context)?;
+
+        Ok(())
+    }
+
+    /// Initialize a new game world.
+    pub fn new_world(&mut self, context: &mut Context) -> anyhow::Result<()> {
+        Layout::set_layout(self, &mut context.handle, None);
+        self.world = Some(World::new(self, context)?);
 
         Ok(())
     }
@@ -152,14 +164,20 @@ impl<'a> State<'a> {
 
 //================================================================
 
+/// The RL/R3D context.
 pub struct Context {
+    /// R3D handle.
     pub r3d: r3d::Handle,
+    /// RL handle.
     pub handle: RaylibHandle,
+    /// RL thread.
     pub thread: RaylibThread,
+    /// RL handle (audio).
     pub audio: RaylibAudio,
 }
 
 impl Context {
+    /// Create a new context, that being a Raylib instance as well as a R3D instance.
     pub fn new() -> anyhow::Result<Self> {
         let (mut handle, thread) = raylib::init()
             .size(1024, 768)
@@ -181,12 +199,15 @@ impl Context {
         })
     }
 
+    /// Apply the user's configuration data to the context.
     pub fn apply_user(&mut self, user: &User) {
-        if user.screen_full {
-            self.handle.set_window_size(1920, 1080);
+        if user.video_full {
+            let i = get_current_monitor();
+            self.handle
+                .set_window_size(get_monitor_width(i), get_monitor_height(i));
             self.handle.toggle_fullscreen();
         }
 
-        self.handle.set_target_fps(user.screen_rate as u32);
+        self.handle.set_target_fps(user.video_rate as u32);
     }
 }

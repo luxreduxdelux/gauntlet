@@ -48,8 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::entity::implementation::*;
-use crate::state::*;
+use crate::physical::*;
 use crate::world::*;
 
 //================================================================
@@ -65,9 +66,7 @@ pub struct Destructible {
     point: Vector3,
     angle: Vector3,
     #[serde(skip)]
-    collider: ColliderHandle,
-    #[serde(skip)]
-    rigid: RigidBodyHandle,
+    presence: Presence,
     #[serde(skip)]
     info: EntityInfo,
 }
@@ -83,7 +82,7 @@ impl Entity for Destructible {
 
     fn initialize(
         &mut self,
-        state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -92,28 +91,29 @@ impl Entity for Destructible {
             .asset
             .set_model(context, "data/video/crate.glb")?;
 
-        let (rigid, collider) = world.scene.physical.new_rigid_cuboid_fixed(
+        self.presence = Presence::new_rigid_cuboid_fixed(
+            &mut world.scene.physical,
             self.point,
             self.angle,
             Vector3::new(0.5, 0.5, 0.5),
             &self.info,
         )?;
 
-        self.rigid = rigid;
-        self.collider = collider;
-
         Ok(())
     }
 
     fn draw_r3d(
         &mut self,
-        _state: &mut State,
+        _app: &mut App,
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         let model = world.scene.asset.get_model("data/video/crate.glb")?;
 
-        let transform = world.scene.physical.get_rigid_transform(self.rigid)?;
+        let transform = world
+            .scene
+            .physical
+            .get_rigid_transform(self.presence.rigid)?;
 
         model.model.draw_pro(&mut context.r3d, transform);
 

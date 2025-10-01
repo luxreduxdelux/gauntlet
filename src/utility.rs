@@ -48,8 +48,8 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
 use crate::asset::*;
-use crate::state::*;
 use crate::world::*;
 
 //================================================================
@@ -130,7 +130,7 @@ impl Animation {
 
     pub fn update(
         &mut self,
-        state: &mut State,
+        app: &mut App,
         world: &mut World,
         path: &str,
         point: Vector3,
@@ -153,7 +153,7 @@ impl Animation {
                     unsafe {
                         match event {
                             crate::asset::AnimationEvent::Sound { path } => {
-                                (*wrl).scene.sound_play(state, path, Some(point))?
+                                (*wrl).scene.sound_play(app, path, Some(point))?
                             }
                             crate::asset::AnimationEvent::Custom(_) => {}
                         }
@@ -238,7 +238,7 @@ impl Direction {
         // forward.
         let x = Vector3::new(
             angle.y.cos() * angle.x.sin(),
-            angle.y.sin() * -1.0,
+            -angle.y.sin(),
             angle.y.cos() * angle.x.cos(),
         );
 
@@ -253,7 +253,7 @@ impl Direction {
         let y = vector_3_rotate_by_axis_angle(y, x, angle.z);
 
         // right.
-        let z = Vector3::new(angle.x.cos(), 0.0, angle.x.sin() * -1.0);
+        let z = Vector3::new(angle.x.cos(), 0.0, -angle.x.sin());
 
         Self { x, y, z }
     }
@@ -358,7 +358,7 @@ pub fn matrix_decompose(mat: &Matrix) -> (Vector3, Quaternion, Vector3) {
 
     // Compute XY shear and make col2 orthogonal
     shear[0] = mat_columns[0].dot(mat_columns[1]);
-    mat_columns[1] = mat_columns[1] - (mat_columns[0].scale_by(shear[0]));
+    mat_columns[1] -= mat_columns[0].scale_by(shear[0]);
 
     // Y scale
     scl.y = mat_columns[1].length();
@@ -369,9 +369,9 @@ pub fn matrix_decompose(mat: &Matrix) -> (Vector3, Quaternion, Vector3) {
 
     // Compute XZ and YZ shears and make col3 orthogonal
     shear[1] = mat_columns[0].dot(mat_columns[2]);
-    mat_columns[2] = mat_columns[2] - (mat_columns[0].scale_by(shear[1]));
+    mat_columns[2] -= mat_columns[0].scale_by(shear[1]);
     shear[2] = mat_columns[1].dot(mat_columns[2]);
-    mat_columns[2] = mat_columns[2] - (mat_columns[1].scale_by(shear[2]));
+    mat_columns[2] -= mat_columns[1].scale_by(shear[2]);
 
     // Z scale
     scl.z = mat_columns[2].length();
@@ -416,26 +416,6 @@ pub fn matrix_decompose(mat: &Matrix) -> (Vector3, Quaternion, Vector3) {
     let rotation = Vector4::from_matrix(rotation_matrix);
 
     (translation, rotation, scale)
-}
-
-pub fn draw_model_transform(
-    draw: &mut RaylibMode3D<'_, RaylibDrawHandle<'_>>,
-    model: &mut Model,
-    point: Vector3,
-    angle: Vector3,
-    scale: f32,
-) {
-    model.transform = Matrix::rotate_xyz(Vector3::new(
-        (-angle.y) * DEG2RAD as f32,
-        (-angle.x - 180.0) * DEG2RAD as f32,
-        // TO-DO fix roll
-        (angle.z) * DEG2RAD as f32,
-    ))
-    .into();
-
-    draw.draw_model(&mut *model, point, scale, Color::WHITE);
-
-    model.transform = Matrix::identity().into();
 }
 
 pub fn percentage_from_value(input: f32, min: f32, max: f32) -> f32 {
@@ -486,4 +466,17 @@ pub fn calculate_distance_pan(camera: Camera3D, point: Vector3, range: f32) -> (
     let pan = (y.dot(direction) + 1.0) / 2.0;
 
     (distance, pan)
+}
+
+/// Throw an error message on screen.
+pub fn error_message(text: &str) {
+    let e = text.to_string();
+
+    std::thread::spawn(move || {
+        rfd::MessageDialog::new()
+            .set_level(rfd::MessageLevel::Error)
+            .set_title("Fatal Error")
+            .set_description(e)
+            .show();
+    });
 }

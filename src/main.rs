@@ -53,22 +53,14 @@
 // TO-DO level generation system
 // TO-DO look into creating own custom model format for level model/entity model
 // TO-DO translation system
+// TO-DO use .zip for data/ folder
 
-// main.rs
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-
+mod app;
 mod asset;
 mod entity;
 mod external;
-mod locale;
 mod physical;
 mod scene;
-mod state;
 mod user;
 mod utility;
 mod window;
@@ -76,44 +68,17 @@ mod world;
 
 //================================================================
 
-use crate::state::*;
+use crate::app::*;
 
 //================================================================
 
-fn main() -> anyhow::Result<()> {
-    unsafe {
-        std::env::set_var("RUST_BACKTRACE", "1");
-    }
+use mimalloc::MiMalloc;
 
-    std::panic::set_hook(Box::new(|panic_info| {
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        std::fs::write(format!("panic_{time}"), panic_info.to_string()).unwrap();
-        State::error_string(&format!(
-            "A fatal error has ocurred. The file \"panic_{time}\" has been written to your game's root directory."
-        ));
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
-        println!("{panic_info}");
-    }));
+//================================================================
 
-    let mut context = Context::new().unwrap();
-    let mut state = State::default();
-
-    context.apply_user(&state.user);
-
-    //================================================================
-
-    unsafe {
-        let context = &mut context as *mut Context;
-        state.initialize(&mut *context).unwrap();
-    };
-
-    state.main(&mut context).unwrap();
-
-    // weird drop bug in raylib-rs will cause state to drop incorrectly.
-    drop(state);
-
-    Ok(())
+fn main() {
+    App::main().unwrap()
 }

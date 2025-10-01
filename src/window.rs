@@ -50,8 +50,8 @@
 
 // TO-DO key glyph at bottom of screen.
 
+use crate::app::*;
 use crate::scene::*;
-use crate::state::*;
 use crate::user::*;
 use crate::utility::*;
 
@@ -79,9 +79,15 @@ pub struct Window<'a> {
 
 impl<'a> Window<'a> {
     const BUTTON_SHAPE_Y: f32 = 32.0;
+    const FONT_SCALE: f32 = 32.0;
     const FONT_SPACE: f32 = 1.0;
 
-    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
+    pub fn set_device(&mut self, device: Device) {
+        self.device = device;
+    }
+
+    #[rustfmt::skip]
+    pub fn initialize(&mut self, app: &App, context: &'a mut Context) -> anyhow::Result<()> {
         let glyph_kind = ["play_station", "nintendo", "xbox"];
         let glyph_list = [
             "button_d.png",
@@ -106,9 +112,7 @@ impl<'a> Window<'a> {
 
         for kind in glyph_kind {
             for list in glyph_list {
-                self.scene
-                    .asset
-                    .set_texture(context, &format!("data/video/glyph/{kind}/{list}"))?;
+                self.scene.asset.set_texture(context, &format!("data/video/glyph/{kind}/{list}"))?;
             }
         }
 
@@ -126,39 +130,19 @@ impl<'a> Window<'a> {
         light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
         light.enable_shadow(256);
 
-        self.scene.initialize(context)?;
+        self.scene.initialize(app, context)?;
 
-        self.scene
-            .asset
-            .set_texture(context, "data/video/glyph/mouse/button_l.png")?;
-        self.scene
-            .asset
-            .set_texture(context, "data/video/glyph/mouse/button_m.png")?;
-        self.scene
-            .asset
-            .set_texture(context, "data/video/glyph/mouse/button_r.png")?;
-        self.scene
-            .asset
-            .set_texture(context, "data/video/glyph/mouse/wheel_u.png")?;
-        self.scene
-            .asset
-            .set_texture(context, "data/video/glyph/mouse/wheel_d.png")?;
+        self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_l.png")?;
+        self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_m.png")?;
+        self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_r.png")?;
+        self.scene.asset.set_texture(context, "data/video/glyph/mouse/wheel_u.png")?;
+        self.scene.asset.set_texture(context, "data/video/glyph/mouse/wheel_d.png")?;
 
-        self.scene
-            .asset
-            .set_font(context, "data/video/font_label.ttf", 32)?;
-        self.scene
-            .asset
-            .set_font(context, "data/video/font_title.ttf", 56)?;
-        self.scene
-            .asset
-            .set_sound(context, "data/audio/hover.ogg", 0)?;
-        self.scene
-            .asset
-            .set_sound(context, "data/audio/click.ogg", 0)?;
-        self.scene
-            .asset
-            .set_sound(context, "data/audio/back.ogg", 0)?;
+        self.scene.asset.set_font(context, "data/video/font_label.ttf", 32)?;
+        self.scene.asset.set_font(context, "data/video/font_title.ttf", 56)?;
+        self.scene.asset.set_sound(context, "data/audio/hover.ogg", 0)?;
+        self.scene.asset.set_sound(context, "data/audio/click.ogg", 0)?;
+        self.scene.asset.set_sound(context, "data/audio/back.ogg", 0)?;
 
         Ok(())
     }
@@ -177,12 +161,8 @@ impl<'a> Window<'a> {
         self.scene.asset.get_font("data/video/font_label.ttf")
     }
 
-    fn font_title(&self) -> anyhow::Result<&Font> {
-        self.scene.asset.get_font("data/video/font_title.ttf")
-    }
-
     fn font_measure(font: &Font, text: &str) -> Vector2 {
-        font.measure_text(text, 32.0, 0.0)
+        font.measure_text(text, Self::FONT_SCALE, Self::FONT_SPACE)
     }
 
     pub fn font_draw(
@@ -192,24 +172,24 @@ impl<'a> Window<'a> {
         point: Vector2,
         color: Color,
     ) {
-        draw.draw_text_ex(font, text, point, 32.0, 1.0, color);
+        draw.draw_text_ex(font, text, point, Self::FONT_SCALE, Self::FONT_SPACE, color);
     }
 
     /// Begin a new UI frame.
     pub fn draw<
-        T: FnMut(&mut State, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
+        T: FnMut(&mut App, &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()>,
     >(
-        state: &mut State<'a>,
+        app: &mut App<'a>,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         mut call: T,
     ) -> anyhow::Result<()> {
-        state.window.glyph_kind = state.user.glyph_kind;
+        app.window.glyph_kind = app.user.video_glyph;
 
-        state.window.begin();
+        app.window.begin();
 
-        call(state, draw)?;
+        call(app, draw)?;
 
-        state.window.close(draw);
+        app.window.close(draw);
 
         Ok(())
     }
@@ -290,15 +270,13 @@ impl<'a> Window<'a> {
         if let Some((view, scroll)) = &mut self.view {
             if view.check_collision_recs(&shape) {
                 true
+            } else if self.device.hover(handle, self.index, Rectangle::default()) {
+                *scroll = (view.y + *scroll) - shape.y;
+                true
             } else {
-                if self.device.hover(handle, self.index, Rectangle::default()) {
-                    *scroll = (view.y + *scroll) - shape.y;
-                    true
-                } else {
-                    self.index += 1;
-                    self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
-                    false
-                }
+                self.index += 1;
+                self.point.y += Self::BUTTON_SHAPE_Y + 4.0;
+                false
             }
         } else {
             true
@@ -518,16 +496,14 @@ impl<'a> Window<'a> {
 
                 *value = (*value).clamp(bound.0, bound.1);
             }
-        } else {
-            if !self.device.is_mouse() {
-                if response.side_a() {
-                    *value -= step;
-                } else if response.side_b() {
-                    *value += step;
-                }
-
-                *value = (*value).clamp(bound.0, bound.1);
+        } else if !self.device.is_mouse() {
+            if response.side_a() {
+                *value -= step;
+            } else if response.side_b() {
+                *value += step;
             }
+
+            *value = (*value).clamp(bound.0, bound.1);
         }
 
         //================================================================
@@ -639,18 +615,16 @@ impl<'a> Window<'a> {
             (Color::BLACK, Color::WHITE)
         };
 
-        let side_a = (!self.device.is_mouse() && response.side_a());
+        let side_a = !self.device.is_mouse() && response.side_a();
         let side_b = (!self.device.is_mouse() && response.side_b()) || response.accept();
 
         if side_a {
             let mut pick = bound.last();
 
             for (i, choice) in bound.iter().enumerate() {
-                if *choice == *value {
-                    if i > 0 {
-                        pick = bound.get(i - 1);
-                        break;
-                    }
+                if *choice == *value && i > 0 {
+                    pick = bound.get(i - 1);
+                    break;
                 }
             }
 
@@ -782,10 +756,8 @@ impl<'a> Window<'a> {
                 *value = Input::new_pad(pad);
                 self.focus = None;
             }
-        } else {
-            if let Some((DeviceResponse::Accept, true)) = response.device {
-                self.focus = Some(self.index)
-            }
+        } else if let Some((DeviceResponse::Accept, true)) = response.device {
+            self.focus = Some(self.index)
         }
 
         //================================================================
@@ -852,20 +824,7 @@ impl<'a> Window<'a> {
 
         self.view = Some((size, 0.0));
 
-        unsafe {
-            //ffi::BeginScissorMode(
-            //    size.x as i32,
-            //    size.y as i32,
-            //    size.width as i32,
-            //    size.height as i32,
-            //);
-        }
-
         call(self, draw)?;
-
-        unsafe {
-            //ffi::EndScissorMode();
-        }
 
         let full = self.point.y - full;
 
@@ -914,81 +873,78 @@ pub enum Layout {
 impl Layout {
     const INITIAL_POINT: Vector2 = Vector2::new(12.0, 84.0);
 
-    fn change_layout(state: &mut State, layout: Option<Self>) {
-        state.window.index = usize::default();
-        state.layout = layout;
-        state.window.time = 0.0;
-        state.window.widget.clear();
+    pub fn set_layout(app: &mut App, handle: &mut RaylibHandle, layout: Option<Self>) {
+        if layout.is_none() {
+            handle.disable_cursor();
+        }
+
+        app.window.index = usize::default();
+        app.layout = layout;
+        app.window.time = 0.0;
+        app.window.widget.clear();
     }
 
     pub fn draw(
-        state: &mut State,
+        app: &mut App,
         draw: &mut RaylibDrawHandle<'_>,
         context: &mut Context,
     ) -> anyhow::Result<()> {
-        state.window.time += draw.get_frame_time();
+        app.window.time += draw.get_frame_time();
 
-        if state.window.device.escape(draw) {
-            if let Some(world) = &mut state.world {
-                world.scene.set_pause(world.scene.pause)?;
-            }
+        if app.window.device.escape(draw)
+            && let Some(world) = &mut app.world
+        {
+            world.scene.set_pause(world.scene.pause)?;
         }
 
-        let pause = state.layout.is_some();
+        let pause = app.layout.is_some();
 
         unsafe {
-            let state_reference = state as *mut State;
+            let state_reference = app as *mut App;
             let ctx_reference = context as *mut Context;
 
             if pause {
-                state.window.scene.camera_3d = Camera3D::perspective(
+                app.window.scene.camera_3d = Camera3D::perspective(
                     Vector3::new(0.0, 1.0, 0.0),
                     Vector3::new(1.0, 1.0, 0.0),
                     Vector3::up(),
                     90.0,
                 );
 
-                state.window.scene.update(&mut *state_reference)?;
+                app.window.scene.update(&*state_reference, context)?;
 
-                state.window.scene.draw_r3d(&mut *context, |_| {
+                app.window.scene.draw_r3d(&mut *context, |_| {
                     //
                     Ok(())
                 })?;
 
-                state.window.scene.draw_2d(&mut *context, draw, |draw| {
-                    let state = &mut *state_reference;
+                app.window.scene.draw_2d(&mut *context, draw, |draw| {
+                    let app = &mut *state_reference;
                     let context = &mut *ctx_reference;
 
-                    if let Some(layout) = &state.layout {
+                    if let Some(layout) = &app.layout {
                         match layout {
-                            Layout::Main => Self::main(state, draw),
-                            Layout::Zoom => Self::zoom(state, context, draw),
-                            Layout::Begin => Self::begin(state, context, draw),
-                            Layout::Setup => Self::setup(state, draw),
-                            Layout::Close => Self::close(state, draw),
+                            Layout::Main => Self::main(app, draw),
+                            Layout::Begin => Self::begin(app, context, draw),
+                            Layout::Setup => Self::setup(app, draw),
+                            Layout::Close => Self::close(app, draw),
                             _ => Ok(()),
                         }?;
                     }
                     Ok(())
                 })?;
-            } else {
-                if state.window.device.escape(draw) {
-                    Self::change_layout(state, Some(Layout::Main));
-                    draw.enable_cursor();
-                }
+            } else if app.window.device.escape(draw) {
+                Self::set_layout(app, draw, Some(Layout::Main));
+                draw.enable_cursor();
             }
         }
 
         Ok(())
     }
 
-    fn window_time_scale(window: &Window) -> f32 {
-        (window.time * 2.5).min(1.0)
-    }
-
-    fn main(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        if state.world.is_some() {
-            Self::layout_back(state, draw, None)?;
+    fn main(app: &mut App, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        if app.world.is_some() {
+            Self::layout_back(app, draw, None)?;
         }
 
         let mut draw = draw.begin_mode2D(Camera2D {
@@ -1000,16 +956,16 @@ impl Layout {
 
         let mut layout = None;
 
-        Window::draw(state, &mut draw, |state, draw| {
-            state.window.point = Self::INITIAL_POINT;
+        Window::draw(app, &mut draw, |app, draw| {
+            app.window.point = Self::INITIAL_POINT;
 
-            if state.window.button(draw, "begin")?.accept() {
+            if app.window.button(draw, "begin")?.accept() {
                 layout = Some(Self::Begin);
             };
-            if state.window.button(draw, "setup")?.accept() {
+            if app.window.button(draw, "setup")?.accept() {
                 layout = Some(Self::Setup);
             };
-            if state.window.button(draw, "close")?.accept() {
+            if app.window.button(draw, "close")?.accept() {
                 layout = Some(Self::Close);
             };
 
@@ -1017,142 +973,48 @@ impl Layout {
         })?;
 
         if let Some(layout) = layout {
-            Self::change_layout(state, Some(layout));
-        }
-
-        Ok(())
-    }
-
-    fn zoom(
-        state: &mut State,
-        context: &mut Context,
-        draw: &mut RaylibDrawHandle<'_>,
-    ) -> anyhow::Result<()> {
-        let time = (state.window.time - 1.5).max(0.0);
-        let scale = (1.0 - time * 0.50).max(0.0);
-        let black = (1.0 - time * 0.75).max(0.0);
-        let scale = ease_in_out_cubic(scale);
-        let black = ease_in_out_cubic(black);
-        let shape = Vector2::new(
-            draw.get_render_width() as f32,
-            draw.get_render_height() as f32,
-        );
-
-        let mut draw = draw.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
-        let header = 1.0 - Self::window_time_scale(&state.window);
-
-        draw.draw_rectangle_rec(
-            Rectangle::new(0.0, 0.0, shape.x, shape.y),
-            Color::new(0, 0, 0, 0).lerp(Color::BLACK, 1.0 - black),
-        );
-
-        if scale == 0.0 {
-            state.new_game(context)?;
+            Self::set_layout(app, &mut draw, Some(layout));
         }
 
         Ok(())
     }
 
     fn layout_back(
-        state: &mut State,
+        app: &mut App,
         draw: &mut RaylibDrawHandle<'_>,
         layout: Option<Self>,
     ) -> anyhow::Result<()> {
-        if let Some(response) = state.window.device.response(draw)
-            && state.window.focus.is_none()
+        if let Some(response) = app.window.device.response(draw)
+            && app.window.focus.is_none()
+            && let (DeviceResponse::Cancel, true) = response
         {
-            match response {
-                (DeviceResponse::Cancel, true) => {
-                    if layout.is_none() {
-                        draw.disable_cursor();
-                    }
-
-                    Self::change_layout(state, layout);
-                    state
-                        .window
-                        .scene
-                        .asset
-                        .get_sound("data/audio/back.ogg")?
-                        .sound
-                        .play();
-                }
-                _ => {}
+            if layout.is_none() {
+                draw.disable_cursor();
             }
+
+            Self::set_layout(app, draw, layout);
+            app.window
+                .scene
+                .asset
+                .get_sound("data/audio/back.ogg")?
+                .sound
+                .play();
         }
 
         Ok(())
     }
 
     fn begin(
-        state: &mut State,
-        context: &mut Context,
-        draw: &mut RaylibDrawHandle<'_>,
+        _app: &mut App,
+        _context: &mut Context,
+        _draw: &mut RaylibDrawHandle<'_>,
     ) -> anyhow::Result<()> {
-        if state.world.is_none() {
-            Self::change_layout(state, Some(Layout::Zoom));
-            draw.disable_cursor();
-            // draw zoom for a single frame to avoid flicker on transition from begin -> zoom.
-            Self::zoom(state, context, draw)?;
-            return Ok(());
-        }
-
-        Self::layout_back(state, draw, Some(Layout::Main))?;
-
-        let mut layout = None;
-        let mut accept = false;
-
-        {
-            let mut draw = draw.begin_mode2D(Camera2D {
-                offset: Vector2::zero(),
-                target: Vector2::zero(),
-                rotation: 0.0,
-                zoom: 1.0,
-            });
-
-            /*
-            state.window.draw(&mut draw, |window, draw| {
-                Self::draw_head_foot(
-                    window,
-                    draw,
-                    state.world.is_some(),
-                    "begin",
-                    Self::window_time_scale(window),
-                )?;
-
-                window.point = Self::INITIAL_POINT;
-
-                if window.button(draw, "accept")?.accept() {
-                    accept = true;
-                };
-                if window.button(draw, "return")?.accept() {
-                    layout = Some(Self::Main);
-                };
-
-                Ok(())
-            })?;
-            */
-        }
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, Some(layout));
-        }
-
-        if accept {
-            state.new_game(context)?;
-        }
-
         Ok(())
     }
 
     #[rustfmt::skip]
-    fn setup(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::layout_back(state, draw, Some(Layout::Main))?;
+    fn setup(app: &mut App, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+        Self::layout_back(app, draw, Some(Layout::Main))?;
 
         let mut draw = draw.begin_mode2D(Camera2D {
             offset: Vector2::zero(),
@@ -1163,15 +1025,15 @@ impl Layout {
 
         let mut layout = None;
 
-        Window::draw(state, &mut draw, |state, draw| {
-            state.window.point = Self::INITIAL_POINT;
+        Window::draw(app, &mut draw, |app, draw| {
+            app.window.point = Self::INITIAL_POINT;
 
             let y = draw.get_screen_height() as f32 - 200.0;
 
-            state.window.scroll(draw, Vector2::new(768.0, y), |window, draw| {
-                window.toggle(draw, "play tutorial", &mut state.user.tutorial)?;
+            app.window.scroll(draw, Vector2::new(768.0, y), |window, draw| {
+                window.toggle(draw, "play tutorial", &mut app.user.tutorial)?;
                 if window
-                    .toggle(draw, "screen full", &mut state.user.screen_full)?
+                    .toggle(draw, "screen full", &mut app.user.video_full)?
                     .accept()
                 {
                     if draw.is_window_fullscreen() {
@@ -1185,76 +1047,76 @@ impl Layout {
                 window.slider(
                     draw,
                     "screen field",
-                    &mut state.user.screen_field,
+                    &mut app.user.video_field,
                     (60.0, 120.0), 1.0,
                 )?;
                 window.slider(
                     draw,
                     "screen shake",
-                    &mut state.user.screen_shake,
+                    &mut app.user.video_shake,
                     (0.0, 2.0),  0.1,
                 )?;
                 window.slider(
                     draw,
                     "screen tilt",
-                    &mut state.user.screen_tilt,
+                    &mut app.user.video_tilt,
                     (0.0, 2.0,),  0.1,
                 )?;
                 /*
-                if state.window
+                if app.window
                     .slider(
                         draw,
                         "screen rate",
-                        &mut state.user.screen_rate,
+                        &mut app.user.screen_rate,
                         (30.0, 300.0), 1.0,
                     )?
                     .release()
                 {
-                    draw.set_target_fps(state.user.screen_rate as u32);
+                    draw.set_target_fps(app.user.screen_rate as u32);
                 }
                 */
 
                 window.slider(
                     draw,
                     "mouse speed",
-                    &mut state.user.mouse_speed,
+                    &mut app.user.input_mouse_scale,
                     (0.0, 2.0), 0.1,
                 )?;
                 window.slider(
                     draw,
                     "sound volume",
-                    &mut state.user.volume_sound,
+                    &mut app.user.audio_sound,
                     (0.0, 1.0), 0.1
                 )?;
                 window.slider(
                     draw,
                     "music volume",
-                    &mut state.user.volume_music,
+                    &mut app.user.audio_music,
                     (0.0, 1.0), 0.1
                 )?;
 
-                window.switch(draw, "glyph kind", &mut state.user.glyph_kind, &[
+                window.switch(draw, "glyph kind", &mut app.user.video_glyph, &[
                     GlyphKind::PlayStation,
                     GlyphKind::Xbox,
                     GlyphKind::Nintendo,
                 ])?;
-                window.switch(draw, "language", &mut state.user.locale_kind, &[
+                window.switch(draw, "language", &mut app.user.video_locale, &[
                     LocaleKind::English,
                     LocaleKind::Spanish,
                 ])?;
 
-                window.action(draw, "move x+", &mut state.user.move_x_a)?;
-                window.action(draw, "move x-", &mut state.user.move_x_b)?;
-                window.action(draw, "move z+", &mut state.user.move_z_a)?;
-                window.action(draw, "move z-", &mut state.user.move_z_b)?;
-                window.action(draw, "jump", &mut state.user.jump)?;
-                window.action(draw, "push", &mut state.user.push)?;
-                window.action(draw, "pull", &mut state.user.pull)?;
+                window.action(draw, "move x+", &mut app.user.input_move_x_a)?;
+                window.action(draw, "move x-", &mut app.user.input_move_x_b)?;
+                window.action(draw, "move z+", &mut app.user.input_move_z_a)?;
+                window.action(draw, "move z-", &mut app.user.input_move_z_b)?;
+                window.action(draw, "jump", &mut app.user.input_jump)?;
+                window.action(draw, "push", &mut app.user.input_push)?;
+                window.action(draw, "pull", &mut app.user.input_pull)?;
 
                 Ok(())
             })?;
 
-            if state.window.button(draw, "return")?.accept() {
+            if app.window.button(draw, "return")?.accept() {
                 layout = Some(Self::Main);
             };
 
@@ -1262,51 +1124,13 @@ impl Layout {
         })?;
 
         if let Some(layout) = layout {
-            Self::change_layout(state, Some(layout));
+            Self::set_layout(app, &mut draw, Some(layout));
         }
 
         Ok(())
     }
 
-    fn close(state: &mut State, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
-        Self::layout_back(state, draw, Some(Layout::Main))?;
-
-        let mut draw = draw.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
-        let mut layout = None;
-
-        /*
-        state.window.draw(&mut draw, |window, draw| {
-            Self::draw_head_foot(
-                window,
-                draw,
-                state.world.is_some(),
-                "close",
-                Self::window_time_scale(window),
-            )?;
-
-            window.point = Self::INITIAL_POINT;
-
-            if window.button(draw, "accept")?.accept() {
-                state.close = true;
-            };
-            if window.button(draw, "return")?.accept() {
-                layout = Some(Self::Main);
-            };
-
-            Ok(())
-        })?;
-        */
-
-        if let Some(layout) = layout {
-            Self::change_layout(state, Some(layout));
-        }
-
+    fn close(_app: &mut App, _draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
         Ok(())
     }
 }
@@ -1322,17 +1146,26 @@ pub struct Widget {
 
 //================================================================
 
-#[derive(PartialEq, Copy, Clone, Default)]
+#[derive(PartialEq, Copy, Clone)]
 pub enum Device {
     Board {
+        lock: bool,
         index: usize,
     },
-    #[default]
-    Mouse,
+    Mouse {
+        lock: bool,
+    },
     Pad {
+        lock: bool,
         index: usize,
         stick: f32,
     },
+}
+
+impl Default for Device {
+    fn default() -> Self {
+        Self::Mouse { lock: false }
+    }
 }
 
 impl Device {
@@ -1365,10 +1198,18 @@ impl Device {
         ),
     ];
 
+    fn lock(&self) -> bool {
+        match self {
+            Device::Board { lock, .. } => *lock,
+            Device::Mouse { lock, .. } => *lock,
+            Device::Pad { lock, .. } => *lock,
+        }
+    }
+
     fn escape(&self, handle: &RaylibHandle) -> bool {
         match self {
             Device::Board { .. } => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
-            Device::Mouse => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
+            Device::Mouse { .. } => handle.is_key_pressed(KeyboardKey::KEY_ESCAPE),
             Device::Pad { .. } => {
                 handle.is_gamepad_button_pressed(0, GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT)
             }
@@ -1420,7 +1261,7 @@ impl Device {
                     Color::WHITE,
                 );
             }
-            Device::Mouse => match device_response {
+            Device::Mouse { .. } => match device_response {
                 DeviceResponse::Accept => {
                     draw_call(window, point, "data/video/glyph/mouse/button_l.png", label)?;
                 }
@@ -1474,7 +1315,7 @@ impl Device {
     }
 
     fn is_mouse(&self) -> bool {
-        matches!(self, Self::Mouse)
+        matches!(self, Self::Mouse { .. })
     }
 
     fn is_pad(&self) -> bool {
@@ -1482,10 +1323,15 @@ impl Device {
     }
 
     fn poll_change(&self, handle: &mut RaylibHandle) -> Self {
+        if self.lock() {
+            return *self;
+        }
+
         let mut new_device = None;
 
         if handle.get_key_pressed().is_some() {
             new_device = Some(Self::Board {
+                lock: false,
                 index: usize::default(),
             })
         }
@@ -1494,16 +1340,15 @@ impl Device {
             let delta = handle.get_mouse_delta();
 
             if delta.length() != 0.0 {
-                new_device = Some(Self::Mouse)
+                new_device = Some(Self::Mouse { lock: false })
             }
-        } else {
-            if Input::get_mouse_pressed(handle).is_some() {
-                new_device = Some(Self::Mouse)
-            }
+        } else if Input::get_mouse_pressed(handle).is_some() {
+            new_device = Some(Self::Mouse { lock: false })
         }
 
         if handle.get_gamepad_button_pressed().is_some() {
             new_device = Some(Self::Pad {
+                lock: false,
                 index: usize::default(),
                 stick: f32::default(),
             })
@@ -1512,7 +1357,7 @@ impl Device {
         if let Some(n_d) = new_device
             && std::mem::discriminant(&n_d) != std::mem::discriminant(self)
         {
-            if matches!(n_d, Self::Mouse) {
+            if matches!(n_d, Self::Mouse { .. }) {
                 handle.enable_cursor();
             } else {
                 handle.disable_cursor();
@@ -1526,15 +1371,17 @@ impl Device {
 
     fn hover(&self, handle: &RaylibHandle, widget_index: usize, widget_shape: Rectangle) -> bool {
         match self {
-            Device::Board { index } => *index == widget_index,
-            Device::Mouse => widget_shape.check_collision_point_rec(handle.get_mouse_position()),
+            Device::Board { index, .. } => *index == widget_index,
+            Device::Mouse { .. } => {
+                widget_shape.check_collision_point_rec(handle.get_mouse_position())
+            }
             Device::Pad { index, .. } => *index == widget_index,
         }
     }
 
     fn update_index(&mut self, handle: &mut RaylibHandle, bound: usize) {
         match self {
-            Device::Board { index } => {
+            Device::Board { index, .. } => {
                 if handle.is_key_pressed(KeyboardKey::KEY_UP)
                     || handle.is_key_pressed_repeat(KeyboardKey::KEY_UP)
                 {
@@ -1553,8 +1400,8 @@ impl Device {
 
                 *index %= bound;
             }
-            Device::Mouse => {}
-            Device::Pad { index, stick } => {
+            Device::Mouse { .. } => {}
+            Device::Pad { index, stick, .. } => {
                 let stick_state =
                     handle.get_gamepad_axis_movement(0, GamepadAxis::GAMEPAD_AXIS_LEFT_Y);
 
@@ -1605,7 +1452,7 @@ impl Device {
 
                 None
             }
-            Device::Mouse => {
+            Device::Mouse { .. } => {
                 for (response, key) in Self::MOUSE_DEVICE_RESPONSE {
                     if handle.is_mouse_button_pressed(key) {
                         return Some((response, true));
@@ -1648,7 +1495,7 @@ impl Device {
 //================================================================
 
 #[derive(PartialEq)]
-enum DeviceResponse {
+pub enum DeviceResponse {
     Accept,
     Cancel,
     SideA,
@@ -1666,19 +1513,19 @@ pub struct Response {
 }
 
 impl Response {
-    fn accept(&self) -> bool {
+    pub fn accept(&self) -> bool {
         matches!(self.device, Some((DeviceResponse::Accept, true)))
     }
 
-    fn cancel(&self) -> bool {
+    pub fn cancel(&self) -> bool {
         matches!(self.device, Some((DeviceResponse::Cancel, true)))
     }
 
-    fn side_a(&self) -> bool {
+    pub fn side_a(&self) -> bool {
         matches!(self.device, Some((DeviceResponse::SideA, true)))
     }
 
-    fn side_b(&self) -> bool {
+    pub fn side_b(&self) -> bool {
         matches!(self.device, Some((DeviceResponse::SideB, true)))
     }
 
@@ -1704,10 +1551,8 @@ impl Response {
             if !widget.hover {
                 widget.hover = true;
             }
-        } else {
-            if widget.hover {
-                widget.hover = false;
-            }
+        } else if widget.hover {
+            widget.hover = false;
         }
 
         Self {
