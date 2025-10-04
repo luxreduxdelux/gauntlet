@@ -106,10 +106,10 @@ impl Entity for Door {
         Ok(())
     }
 
-    fn draw_r3d(
+    fn draw_3d(
         &mut self,
         _app: &mut App,
-        context: &mut Context,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
@@ -121,37 +121,24 @@ impl Entity for Door {
 
         // TO-DO correct model in blender
 
-        model_a.model.draw_ex(
-            &mut context.r3d,
+        draw.draw_model_ex(
+            &model_a.model,
             point_a,
             direction.y,
             -3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
+            Color::WHITE,
         );
 
         let model_b = world.scene.asset.get_model("data/video/door_b.glb")?;
 
-        model_b.model.draw_ex(
-            &mut context.r3d,
+        draw.draw_model_ex(
+            &model_b.model,
             point_b,
             direction.y,
             -3.14 / 2.0 + self.angle.x.to_radians(),
             Vector3::one(),
-        );
-
-        Ok(())
-    }
-
-    fn draw_3d(
-        &mut self,
-        _app: &mut App,
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        draw.draw_cube_v(
-            self.point,
-            Self::CUBOID_SCALE * 2.0,
-            Color::new(255, 0, 0, 127),
+            Color::WHITE,
         );
 
         Ok(())

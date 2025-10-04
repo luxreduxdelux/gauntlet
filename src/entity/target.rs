@@ -51,6 +51,7 @@
 use crate::app::*;
 use crate::entity::implementation::*;
 use crate::physical::*;
+use crate::utility::draw_model_transform;
 use crate::world::*;
 
 //================================================================
@@ -112,10 +113,10 @@ impl Entity for Target {
         Ok(())
     }
 
-    fn draw_r3d(
+    fn draw_3d(
         &mut self,
         _app: &mut App,
-        context: &mut Context,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
         let model = world.scene.asset.get_model("data/video/target.glb")?;
@@ -125,7 +126,7 @@ impl Entity for Target {
             .physical
             .get_rigid_transform(self.presence.rigid)?;
 
-        model.model.draw_pro(&mut context.r3d, transform);
+        draw_model_transform(draw, model, transform);
 
         Ok(())
     }

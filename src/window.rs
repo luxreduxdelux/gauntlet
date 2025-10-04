@@ -118,18 +118,6 @@ impl<'a> Window<'a> {
 
         self.scene.room_add(context, "data/video/menu.glb")?;
 
-        let mut light = crate::external::r3d::Light::new(
-            &mut context.r3d,
-            crate::external::r3d::LightType::Omnidirectional,
-        );
-
-        light.set_position(Vector3::new(2.0, 0.0, 0.0));
-        light.set_active(true);
-        light.set_specular(0.0);
-        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 4.0);
-        light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
-        light.enable_shadow(256);
-
         self.scene.initialize(app, context)?;
 
         self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_l.png")?;
@@ -913,7 +901,7 @@ impl Layout {
 
                 app.window.scene.update(&*state_reference, context)?;
 
-                app.window.scene.draw_r3d(&mut *context, |_| {
+                app.window.scene.draw_3d(&mut *context, draw, |draw| {
                     //
                     Ok(())
                 })?;

@@ -104,15 +104,6 @@ pub trait Entity: Any {
 
     //================================================================
 
-    fn draw_r3d(
-        &mut self,
-        _app: &mut App,
-        _context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
     fn draw_3d(
         &mut self,
         _app: &mut App,

@@ -189,12 +189,19 @@ impl Entity for Enemy {
         Ok(())
     }
 
-    fn draw_r3d(
+    fn draw_3d(
         &mut self,
         _app: &mut App,
-        context: &mut Context,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        let model = world.scene.asset.get_model("data/video/test.glb")?;
+
+        if let Ok(Some((point, _, _))) = self.animation.get_bone_data(model, "DEF-headtip") {
+            draw.draw_cube_v(self.point + point, Vector3::one() * 0.1, Color::RED);
+        }
+
+        /*
         if world.scene.room_active_box(
             self.point,
             Vector3::default(),
@@ -216,21 +223,7 @@ impl Entity for Enemy {
             //    1.0,
             //);
         }
-
-        Ok(())
-    }
-
-    fn draw_3d(
-        &mut self,
-        _app: &mut App,
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        world: &mut World,
-    ) -> anyhow::Result<()> {
-        let model = world.scene.asset.get_model("data/video/test.glb")?;
-
-        if let Ok(Some((point, _, _))) = self.animation.get_bone_data(model, "DEF-headtip") {
-            draw.draw_cube_v(self.point + point, Vector3::one() * 0.1, Color::RED);
-        }
+        */
 
         Ok(())
     }

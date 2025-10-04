@@ -159,14 +159,6 @@ impl<'a> World<'a> {
 
         unsafe {
             if !pause {
-                self.scene.draw_r3d(context, |context| {
-                    for entity in &mut self.entity_list {
-                        entity.draw_r3d(app, context, &mut *world)?;
-                    }
-
-                    Ok(())
-                })?;
-
                 self.scene.draw_3d(context, draw, |draw| {
                     for entity in &mut self.entity_list {
                         entity.draw_3d(app, draw, &mut *world)?;

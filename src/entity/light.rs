@@ -50,7 +50,6 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
-use crate::external::r3d::*;
 use crate::utility::*;
 use crate::window::Window;
 use crate::world::*;
@@ -183,15 +182,15 @@ impl LightKind {
 pub struct Light {
     point: Vector3,
     angle: Vector3,
-    mode: LightType,
+    //mode: LightType,
     kind: LightKind,
     color: Color,
     #[serde(skip)]
     frame: f32,
     #[serde(skip)]
     focus: bool,
-    #[serde(skip)]
-    handle: Option<crate::external::r3d::Light>,
+    //#[serde(skip)]
+    //handle: Option<crate::external::r3d::Light>,
     #[serde(skip)]
     info: EntityInfo,
 }
@@ -211,6 +210,7 @@ impl Entity for Light {
         context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
+        /*
         let mut light = crate::external::r3d::Light::new(&mut context.r3d, self.mode);
 
         light.set_active(true);
@@ -225,23 +225,7 @@ impl Entity for Light {
         light.look_at(self.point, self.point + direction.x);
 
         self.handle = Some(light);
-
-        Ok(())
-    }
-
-    fn draw_r3d(
-        &mut self,
-        _app: &mut App,
-        _context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        if let Some(handle) = &mut self.handle {
-            let active = _world.scene.room_active(self.point);
-
-            if (active && !handle.is_active()) || (!active && handle.is_active()) {
-                handle.set_active(active);
-            }
-        }
+        */
 
         Ok(())
     }
@@ -252,6 +236,16 @@ impl Entity for Light {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         _world: &mut World,
     ) -> anyhow::Result<()> {
+        /*
+        if let Some(handle) = &mut self.handle {
+            let active = _world.scene.room_active(self.point);
+
+            if (active && !handle.is_active()) || (!active && handle.is_active()) {
+                handle.set_active(active);
+            }
+        }
+        */
+
         draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
 
         Ok(())
@@ -264,6 +258,7 @@ impl Entity for Light {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        /*
         let focus = self.focus;
 
         if self.focus {
@@ -349,6 +344,7 @@ impl Entity for Light {
                 // TO-DO make this happen automatically on set_device
                 draw.enable_cursor();
             }
+        */
 
         Ok(())
     }
@@ -359,6 +355,7 @@ impl Entity for Light {
         _context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
+        /*
         if let Some(light) = &mut self.handle
             && light.is_active()
         {
@@ -383,6 +380,7 @@ impl Entity for Light {
 
             light.update_shadow_map();
         }
+        */
 
         Ok(())
     }

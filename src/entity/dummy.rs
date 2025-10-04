@@ -176,37 +176,6 @@ impl Entity for Dummy {
         Ok(())
     }
 
-    fn draw_r3d(
-        &mut self,
-        _app: &mut App,
-        context: &mut Context,
-        world: &mut World,
-    ) -> anyhow::Result<()> {
-        if world.scene.room_active_box(
-            self.point,
-            Vector3::default(),
-            Vector3::new(0.25, 0.5, 0.25),
-        ) {
-            let model = world.scene.asset.get_model("data/video/test.glb")?;
-
-            if context.handle.is_key_pressed(KeyboardKey::KEY_ONE) {
-                self.animation = Animation::new(model, "Idle_Loop", 60.0);
-            } else if context.handle.is_key_pressed(KeyboardKey::KEY_TWO) {
-                self.animation = Animation::new(model, "Pistol_Reload", 60.0);
-            } else if context.handle.is_key_pressed(KeyboardKey::KEY_THREE) {
-                self.animation = Animation::new(model, "Death01", 60.0);
-            }
-
-            //model.model.draw(
-            //    &mut context.r3d,
-            //    self.point - Vector3::new(0.0, 0.5, 0.0),
-            //    1.0,
-            //);
-        }
-
-        Ok(())
-    }
-
     fn draw_3d(
         &mut self,
         _app: &mut App,

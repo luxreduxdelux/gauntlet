@@ -529,20 +529,29 @@ impl Physical {
     // Create a new model collider.
     pub fn new_model(
         &mut self,
-        model: &crate::external::r3d::Model,
+        model: &Model,
         parent: Option<RigidBodyHandle>,
     ) -> anyhow::Result<()> {
         for mesh in model.meshes() {
             let list_vertex = mesh
                 .vertices()
                 .iter()
-                .map(|v| point![v.position().x, v.position().y, v.position().z])
+                .map(|v| point![v.x, v.y, v.z])
                 .collect();
             let mut list_index = Vec::new();
-            let index = mesh.indicies();
+            let index = unsafe {
+                std::slice::from_raw_parts(
+                    mesh.indices as *const u16,
+                    mesh.triangleCount as usize * 3,
+                )
+            };
 
             for x in 0..index.len() / 3 {
-                list_index.push([index[x * 3], index[x * 3 + 1], index[x * 3 + 2]]);
+                list_index.push([
+                    index[x * 3 + 0] as u32,
+                    index[x * 3 + 1] as u32,
+                    index[x * 3 + 2] as u32,
+                ]);
             }
 
             let collider = ColliderBuilder::trimesh(list_vertex, list_index)?;

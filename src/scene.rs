@@ -56,7 +56,6 @@ use raylib::prelude::*;
 
 use crate::app::*;
 use crate::asset::*;
-use crate::external::r3d::*;
 use crate::physical::*;
 use crate::utility::*;
 
@@ -71,7 +70,7 @@ pub struct Scene<'a> {
     texture: Option<RenderTexture2D>,
     sound_list: Vec<Noise>,
     music_list: Vec<Noise>,
-    pub light_list: Vec<Light>,
+    //pub light_list: Vec<Light>,
     pub room_list: Vec<Room>,
     pub view_list: Vec<View>,
     pub path_list: Vec<Path>,
@@ -164,9 +163,6 @@ impl<'a> Scene<'a> {
             context.handle.get_screen_height() as f32 * scale,
         );
 
-        context
-            .r3d
-            .update_resolution((size.x as i32, size.y as i32));
         self.texture = Some(context.handle.load_render_texture(
             &context.thread,
             size.x as u32,
@@ -200,7 +196,7 @@ impl<'a> Scene<'a> {
                 let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
 
                 let model = self.asset.get_model(&room.path)?;
-                let bound = model.model.get_bounding_box();
+                let bound = model.model.get_model_bounding_box();
 
                 let hit_f = bound.get_ray_collision_box(direction_f);
                 let hit_b = bound.get_ray_collision_box(direction_b);
@@ -256,7 +252,7 @@ impl<'a> Scene<'a> {
         }
 
         let model = self.asset.set_model(context, path)?;
-        let bound = model.model.get_bounding_box();
+        let bound = model.model.get_model_bounding_box();
 
         let collider = self
             .physical
@@ -425,49 +421,6 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn draw_r3d<F: FnMut(&mut Context) -> anyhow::Result<()>>(
-        &mut self,
-        context: &mut Context,
-        mut call: F,
-    ) -> anyhow::Result<()> {
-        let ctx = { context as *mut Context };
-        let scn = { self as *mut Self };
-
-        let texture = self.texture.as_mut().unwrap();
-        let mut result = Ok(());
-
-        context.r3d.render_ex(self.camera_3d, texture, |r3d| {
-            for room in &mut self.room_list {
-                room.visit = false;
-                room.visible = false;
-            }
-
-            unsafe {
-                // HACK: menu view isn't working, i assume it's we don't have any view node?
-                if self.view_list.is_empty() {
-                    for room in &self.room_list {
-                        let model = self.asset.get_model(&room.path).unwrap();
-                        model.model.draw(r3d, Vector3::zero(), 1.0);
-                    }
-                } else if let Some(room) = (*scn).room_active_index(self.camera_3d.position) {
-                    Room::traverse(
-                        room,
-                        r3d,
-                        &self.view_list,
-                        &mut self.room_list,
-                        &mut self.asset,
-                        true,
-                    );
-                }
-
-                // scene should be in charge of level geometry rendering...?
-                result = call(&mut *ctx);
-            }
-        });
-
-        result
-    }
-
     pub fn draw_3d<
         F: FnMut(
             &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
@@ -478,12 +431,39 @@ impl<'a> Scene<'a> {
         draw: &mut RaylibDrawHandle,
         mut call: F,
     ) -> anyhow::Result<()> {
+        let scn = { self as *mut Self };
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
 
+        draw.clear_background(Color::BLACK);
+
         if draw.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
             self.physical.draw();
+        }
+
+        for room in &mut self.room_list {
+            room.visit = false;
+            room.visible = false;
+        }
+
+        unsafe {
+            // HACK: menu view isn't working, i assume it's we don't have any view node?
+            if self.view_list.is_empty() {
+                for room in &self.room_list {
+                    let model = self.asset.get_model(&room.path).unwrap();
+                    draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
+                }
+            } else if let Some(room) = (*scn).room_active_index(self.camera_3d.position) {
+                Room::traverse(
+                    room,
+                    &mut draw,
+                    &self.view_list,
+                    &mut self.room_list,
+                    &mut self.asset,
+                    true,
+                );
+            }
         }
 
         call(&mut draw)
@@ -542,7 +522,7 @@ impl<'a> Default for Scene<'a> {
             texture: None,
             sound_list: Vec::default(),
             music_list: Vec::default(),
-            light_list: Vec::default(),
+            //light_list: Vec::default(),
             room_list: Vec::default(),
             view_list: Vec::default(),
             path_list: Vec::default(),
@@ -571,7 +551,7 @@ pub struct Room {
 impl<'a> Room {
     fn traverse(
         room_index: usize,
-        handle: &mut Handle,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         view_list: &[View],
         room_list: &mut [Room],
         asset: &mut Asset<'a>,
@@ -589,13 +569,13 @@ impl<'a> Room {
             current_room.visible = true;
 
             let model = asset.get_model(&current_room.path).unwrap();
-            model.model.draw(handle, Vector3::zero(), 1.0);
+            draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
 
             let c_r_view = current_room.view.clone();
 
             for view in &c_r_view {
                 for room in &view_list[*view].room {
-                    Self::traverse(*room, handle, view_list, room_list, asset, false);
+                    Self::traverse(*room, draw, view_list, room_list, asset, false);
                 }
             }
         } else {

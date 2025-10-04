@@ -48,7 +48,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use crate::external::*;
 use crate::user::*;
 use crate::utility::*;
 use crate::window::*;
@@ -164,10 +163,8 @@ impl<'a> App<'a> {
 
 //================================================================
 
-/// The RL/R3D context.
+/// The RL context.
 pub struct Context {
-    /// R3D handle.
-    pub r3d: r3d::Handle,
     /// RL handle.
     pub handle: RaylibHandle,
     /// RL thread.
@@ -189,10 +186,8 @@ impl Context {
         handle.set_trace_log(TraceLogLevel::LOG_ERROR);
 
         let audio = RaylibAudio::init_audio_device()?;
-        let r3d = r3d::Handle::new((1024, 768));
 
         Ok(Self {
-            r3d,
             handle,
             thread,
             audio,

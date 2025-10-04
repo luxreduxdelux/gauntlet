@@ -58,7 +58,6 @@
 mod app;
 mod asset;
 mod entity;
-mod external;
 mod physical;
 mod scene;
 mod user;

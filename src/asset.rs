@@ -88,20 +88,23 @@ impl<'a> Asset<'a> {
             return self.get_model(name);
         }
 
-        let mut model = crate::external::r3d::Model::new(&mut context.r3d, name);
-        let animation = crate::external::r3d::ModelAnimationList::new(
-            &mut context.r3d,
-            name,
-            Self::ANIMATION_BASE_FRAME_RATE,
-        );
+        let mut model = context.handle.load_model(&context.thread, name)?;
+        let animation = context
+            .handle
+            .load_model_animations(&context.thread, name)
+            .unwrap_or_default();
         let meta = ModelMeta::new(name)?;
 
         if let Some(texture) = &meta.texture {
-            let material = model.materials();
+            let material = model.materials_mut();
 
             for (i, path) in texture.iter().enumerate() {
                 let texture = self.set_texture(context, &format!("data/{path}"))?;
-                material[i].get_albedo().set_texture(texture);
+
+                println!("set {i} texture");
+                material[i + 1].maps_mut()[MaterialMapIndex::MATERIAL_MAP_ALBEDO as usize]
+                    .texture = **texture;
+                //material[i].get_albedo().set_texture(texture);
             }
         }
 
@@ -311,9 +314,9 @@ impl Drop for Asset<'_> {
 /// A 3D model.
 pub struct AssetModel {
     /// Handle to the R3D model data.
-    pub model: crate::external::r3d::Model,
+    pub model: Model,
     /// Handle to the R3D model animation data.
-    pub animation: crate::external::r3d::ModelAnimationList,
+    pub animation: Vec<ModelAnimation>,
     /// Model-specific animation event data.
     pub event: ModelEvent,
 }

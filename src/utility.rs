@@ -72,10 +72,12 @@ pub struct Animation {
 
 impl Animation {
     pub fn new(model: &mut AssetModel, name: &str, rate: f32) -> Self {
+        /* TO-DO fix
         model
             .model
             .set_model_animation(model.animation.get_animation(name));
         model.model.set_animation_frame(0);
+        */
 
         Self {
             name: name.to_string(),
@@ -142,6 +144,8 @@ impl Animation {
         let wrl = world as *mut World;
         let model = world.scene.asset.get_model(path)?;
 
+        // TO-DO fix
+        /*
         // TO-DO probably not a good idea to be getting the model animation each frame...fix.
         if let Some(animation) = model.model.get_model_animation() {
             let delta = self.frame + World::TIME_STEP * self.rate;
@@ -168,6 +172,7 @@ impl Animation {
             self.frame += World::TIME_STEP * self.rate;
             self.frame %= animation.get_frame_count() as f32;
         }
+        */
 
         Ok(())
     }
@@ -177,6 +182,7 @@ impl Animation {
         model: &AssetModel,
         bone_name: &str,
     ) -> anyhow::Result<Option<(Vector3, Vector4, Vector3)>> {
+        /*
         let frame = model
             .animation
             .get_animation(&self.name)
@@ -207,6 +213,9 @@ impl Animation {
         }
 
         Ok(None)
+        */
+
+        todo!()
     }
 }
 
@@ -319,6 +328,18 @@ pub fn movement_walk(
 }
 
 //================================================================
+
+pub fn draw_model_transform(
+    draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+    model: &mut AssetModel,
+    transform: raylib::math::Matrix,
+) {
+    model.model.transform = transform.into();
+
+    draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
+
+    model.model.transform = raylib::math::Matrix::identity().into();
+}
 
 pub struct Direction {
     pub x: Vector3,
