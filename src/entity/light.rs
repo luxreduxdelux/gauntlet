@@ -59,15 +59,135 @@ use crate::world::*;
 
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 //================================================================
+
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Default)]
+enum LightKind {
+    // 0
+    #[default]
+    Normal,
+    // 1
+    FlickerA,
+    // 6
+    FlickerB,
+    // 10
+    FlickerC,
+    // 3
+    CandleA,
+    // 7
+    CandleB,
+    // 8
+    CandleC,
+    // 2
+    PulseA,
+    // 4
+    PulseB,
+    // 5
+    PulseC,
+    // 9
+    PulseD,
+    // 11
+    PulseE,
+}
+
+impl Display for LightKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let string = match self {
+            LightKind::Normal => "Normal",
+            LightKind::FlickerA => "FlickerA",
+            LightKind::FlickerB => "FlickerB",
+            LightKind::FlickerC => "FlickerC",
+            LightKind::CandleA => "CandleA",
+            LightKind::CandleB => "CandleB",
+            LightKind::CandleC => "CandleC",
+            LightKind::PulseA => "PulseA",
+            LightKind::PulseB => "PulseB",
+            LightKind::PulseC => "PulseC",
+            LightKind::PulseD => "PulseD",
+            LightKind::PulseE => "PulseE",
+        };
+
+        f.write_str(string)
+    }
+}
+
+/*
+def light_style(string):
+    print("&[")
+    for character in string:
+        index = ord(character)
+        value = (index - 97) / (122 - 97)
+        print(value, ",")
+    print("]")
+*/
+
+impl LightKind {
+    fn animation(&self) -> &[f32] {
+        match self {
+            LightKind::Normal => &[],
+            LightKind::FlickerA => &[
+                0.48, 0.48, 0.52, 0.48, 0.48, 0.56, 0.48, 0.48, 0.56, 0.48, 0.48, 0.52, 0.56, 0.52,
+                0.48, 0.48, 0.56, 0.52, 0.64, 0.52, 0.48, 0.48, 0.56,
+            ],
+            LightKind::FlickerB => &[
+                0.52, 0.48, 0.56, 0.52, 0.64, 0.52, 0.48, 0.56, 0.48, 0.52, 0.48, 0.56, 0.48, 0.56,
+                0.48, 0.52, 0.56,
+            ],
+            LightKind::FlickerC => &[
+                0.48, 0.48, 0.0, 0.48, 0.0, 0.48, 0.48, 0.48, 0.48, 0.0, 0.48, 0.48, 0.0, 0.48,
+                0.0, 0.48, 0.0, 0.0, 0.0, 0.48, 0.0, 0.48, 0.48, 0.48, 0.0,
+            ],
+            LightKind::CandleA => &[
+                0.48, 0.48, 0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.0, 0.0, 0.48, 0.48, 0.48, 0.48,
+                0.48, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.24, 0.0, 0.04,
+                0.08, 0.12, 0.16, 0.2, 0.24,
+            ],
+            LightKind::CandleB => &[
+                0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.24, 0.48,
+                0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.0, 0.48, 0.48, 0.48, 0.0, 0.0, 0.48, 0.48,
+            ],
+            LightKind::CandleC => &[
+                0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.48, 0.48, 0.48,
+                0.0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.0, 0.0, 0.0, 0.0, 0.48, 0.48, 0.48, 0.48, 0.0,
+                0.04, 0.08, 0.12, 0.16, 0.2, 0.48, 0.48, 0.48, 0.0, 0.0, 0.0, 0.0,
+            ],
+            LightKind::PulseA => &[
+                0.0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32, 0.36, 0.4, 0.44, 0.48, 0.52,
+                0.56, 0.6, 0.64, 0.68, 0.72, 0.76, 0.8, 0.84, 0.88, 0.92, 0.96, 1.0, 0.96, 0.92,
+                0.88, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.6, 0.56, 0.52, 0.48, 0.44, 0.4, 0.36,
+                0.32, 0.28, 0.24, 0.2, 0.16, 0.12, 0.08, 0.04, 0.0,
+            ],
+            LightKind::PulseB => &[
+                0.48, 0.0, 0.48, 0.0, 0.48, 0.0, 0.48, 0.0, 0.48, 0.0, 0.48, 0.0,
+            ],
+            LightKind::PulseC => &[
+                0.36, 0.4, 0.44, 0.48, 0.52, 0.56, 0.6, 0.64, 0.68, 0.72, 0.76, 0.8, 0.84, 0.88,
+                0.92, 0.96, 1.0, 0.96, 0.92, 0.88, 0.84, 0.8, 0.76, 0.72, 0.68, 0.64, 0.6, 0.56,
+                0.52, 0.48, 0.44, 0.4, 0.36,
+            ],
+            LightKind::PulseD => &[
+                0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            ],
+            LightKind::PulseE => &[
+                0.0, 0.04, 0.08, 0.12, 0.16, 0.2, 0.24, 0.28, 0.32, 0.36, 0.4, 0.44, 0.48, 0.52,
+                0.56, 0.6, 0.64, 0.68, 0.68, 0.64, 0.6, 0.56, 0.52, 0.48, 0.44, 0.4, 0.36, 0.32,
+                0.28, 0.24, 0.2, 0.16, 0.12, 0.08, 0.04, 0.0,
+            ],
+        }
+    }
+}
 
 #[derive(Serialize, Deserialize)]
 pub struct Light {
     point: Vector3,
     angle: Vector3,
     mode: LightType,
+    kind: LightKind,
     color: Color,
+    #[serde(skip)]
+    frame: f32,
     #[serde(skip)]
     focus: bool,
     #[serde(skip)]
@@ -75,8 +195,6 @@ pub struct Light {
     #[serde(skip)]
     info: EntityInfo,
 }
-
-impl Light {}
 
 #[typetag::serde]
 impl Entity for Light {
@@ -87,7 +205,7 @@ impl Entity for Light {
         &mut self.info
     }
 
-    fn initialize(
+    fn create(
         &mut self,
         _app: &mut App,
         context: &mut Context,
@@ -165,6 +283,20 @@ impl Entity for Light {
                 app.window.slider(draw, "Energy", &mut energy, (0.0, 4.0), 0.1)?;
                 app.window.slider(draw, "Range", &mut range, (0.0, 64.0), 1.0)?;
                 app.window.slider(draw, "Attenuation", &mut attenuation, (0.0, 4.0), 0.1)?;
+                app.window.switch(draw, "Kind", &mut self.kind, &[
+                    LightKind::Normal,
+                    LightKind::FlickerA,
+                    LightKind::FlickerB,
+                    LightKind::FlickerC,
+                    LightKind::CandleA,
+                    LightKind::CandleB,
+                    LightKind::CandleC,
+                    LightKind::PulseA,
+                    LightKind::PulseB,
+                    LightKind::PulseC,
+                    LightKind::PulseD,
+                    LightKind::PulseE,
+                ])?;
 
                 handle.set_energy(energy);
 
@@ -224,13 +356,32 @@ impl Entity for Light {
     fn tick(
         &mut self,
         _app: &mut App,
-        _handle: &mut RaylibHandle,
+        _context: &mut Context,
         _world: &mut World,
     ) -> anyhow::Result<()> {
-        if let Some(handle) = &mut self.handle
-            && handle.is_active()
+        if let Some(light) = &mut self.handle
+            && light.is_active()
         {
-            handle.update_shadow_map();
+            let animation = self.kind.animation();
+
+            if !animation.is_empty() {
+                self.frame += World::TIME_STEP * 10.0;
+                self.frame %= animation.len() as f32;
+
+                let frame = self.frame as usize;
+
+                if frame > 0 {
+                    let frame_a = animation[frame - 1];
+                    let frame_b = animation[frame];
+                    let factor = (self.frame - frame as f32) / ((frame + 1) as f32 - frame as f32);
+                    light
+                        .set_energy(interpolate(frame_a, frame_b, ease_in_out_cubic(factor)) * 2.0);
+                } else {
+                    light.set_energy(animation[frame] * 2.0);
+                }
+            }
+
+            light.update_shadow_map();
         }
 
         Ok(())

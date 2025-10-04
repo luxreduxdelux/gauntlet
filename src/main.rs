@@ -72,10 +72,8 @@ use crate::app::*;
 
 //================================================================
 
-use mimalloc::MiMalloc;
-
 #[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 //================================================================
 

@@ -86,7 +86,7 @@ impl Entity for Door {
         &mut self.info
     }
 
-    fn initialize(
+    fn create(
         &mut self,
         _app: &mut App,
         context: &mut Context,
@@ -160,7 +160,7 @@ impl Entity for Door {
     fn tick(
         &mut self,
         _app: &mut App,
-        _handle: &mut RaylibHandle,
+        _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         // cast square in front of door, if player is in front of it, open, otherwise, close.

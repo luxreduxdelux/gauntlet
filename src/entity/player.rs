@@ -63,6 +63,8 @@ use crate::world::*;
 //================================================================
 
 use rand::Rng;
+use rapier3d::control::CharacterAutostep;
+use rapier3d::control::CharacterLength;
 use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
@@ -77,19 +79,15 @@ pub struct Player {
     #[serde(skip)]
     speed: Vector3,
     #[serde(skip)]
-    presence: Presence,
+    pub wield: Option<Box<dyn Wield>>,
     #[serde(skip)]
-    character: KinematicCharacterController,
+    pub presence: Presence,
     #[serde(skip)]
-    app: PlayerState,
+    state: PlayerState,
     #[serde(skip)]
     view: View,
     #[serde(skip)]
     floor: bool,
-    #[serde(skip)]
-    slide: bool,
-    #[serde(skip)]
-    clash: bool,
     #[serde(skip)]
     shake: f32,
     #[serde(skip)]
@@ -115,7 +113,7 @@ impl Entity for Player {
         &mut self.info
     }
 
-    fn initialize<'a>(
+    fn create<'a>(
         &mut self,
         app: &mut App,
         _context: &'a mut Context,
@@ -129,7 +127,6 @@ impl Entity for Player {
             &self.info,
         )?;
 
-        self.character = KinematicCharacterController::default();
         world.player = Some(self.info.index);
 
         self.view = View::new(
@@ -200,7 +197,7 @@ impl Entity for Player {
 
     fn draw_2d(
         &mut self,
-        _app: &mut App,
+        app: &mut App,
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
@@ -230,7 +227,9 @@ impl Entity for Player {
             Color::BLACK.lerp(Color::new(0, 0, 0, 0), scale),
         );
 
-        //draw.draw_text(&format!("{}", self.speed.y), 8, 8, 32, Color::RED);
+        if let Some(wield) = &mut self.wield {
+            wield.draw_2d(app, draw, world)?;
+        }
 
         Ok(())
     }
@@ -238,123 +237,95 @@ impl Entity for Player {
     fn tick(
         &mut self,
         app: &mut App,
-        handle: &mut RaylibHandle,
+        context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if !handle.is_cursor_hidden() {
+        if !context.handle.is_cursor_hidden() {
             return Ok(());
         }
 
-        // TO-DO slide player alongside wall
-        // TO-DO bounce player off ceiling if bumping head
         // TO-DO fix being able to jump off side of rigid body
         // TO-DO fix snap-to-ground on slope
-        PlayerState::tick(self, app, handle);
+        PlayerState::tick(self, app, world, &context.handle)?;
+
+        //================================================================
 
         self.shake = (self.shake - World::TIME_STEP * self.shake * 4.0).max(0.0);
         self.zoom = (self.zoom - World::TIME_STEP * self.zoom * 2.0).max(0.0);
 
-        let angle = Direction::new_from_angle(&self.angle);
-
-        let cast = world.scene.physical.cast_ray(
-            world.scene.camera_3d.position,
-            angle.x,
-            8.0,
-            true,
-            Some(self.presence.rigid),
-            QueryFilter::default().exclude_sensors(),
-        );
-
-        if let Some((collider, _)) = cast
-            && let Ok(Some(entity)) = world.entity_from_collider(collider)
-        {
-            println!("{}", entity.typetag_name());
-        }
-
-        if app.user.input_push.down(handle) {
-            self.push = (self.push + World::TIME_STEP * 1.5).min(1.0);
+        if let Some(wield) = &mut self.wield {
+            wield.tick(app, context, world)?;
         } else {
-            if self.push > 0.0 {
-                let angle = Direction::new_from_angle(&self.angle);
+            let angle = Direction::new_from_angle(&self.angle);
 
-                let cast = world.scene.physical.cast_ray(
-                    world.scene.camera_3d.position,
-                    angle.x,
-                    2.0,
-                    true,
-                    Some(self.presence.rigid),
-                    QueryFilter::default().exclude_sensors(),
-                );
+            let cast = world.scene.physical.cast_ray(
+                world.scene.camera_3d.position,
+                angle.x,
+                2.5,
+                true,
+                Some(self.presence.rigid),
+                QueryFilter::default().exclude_sensors(),
+            );
 
-                if cast.is_some() {
-                    self.shake = self.push * 0.15;
+            let wrl = { world as *mut World };
 
-                    // TO-DO past a certain threshold, ignore angle on push jump and just push upward anyway?
-                    let boost = angle.x * 5.0 * self.push;
-
-                    if self.speed.y < 0.0 {
-                        // allow player to pogo jump off floor if falling down
-                        self.speed.x -= boost.x;
-                        self.speed.y = -boost.y;
-                        self.speed.z -= boost.z;
-                    } else if self.angle.y >= 60.0 {
-                        self.speed.y += 5.0 * self.push;
-                    } else {
-                        self.speed -= boost;
-                    }
-                } else if !self.floor {
-                    if self.angle.y >= 60.0 {
-                        self.speed.x = 0.0;
-                        self.speed.z = 0.0;
-                        self.app = PlayerState::Slam { time: 0.0 };
-                    } else {
-                        self.zoom = self.push;
-
-                        self.speed += angle.x * 5.0 * self.push;
-                    }
+            if let Some((collider, _)) = cast
+                && let Ok(Some(entity)) = world.entity_from_collider_mutable(collider)
+            {
+                if app.user.input_pull.press() {
+                    entity.interact(app, context, unsafe { &mut *wrl }, self)?;
                 }
             }
 
-            self.push = 0.0;
+            if app.user.input_push.down(&context.handle) {
+                self.push = (self.push + World::TIME_STEP * 1.5).min(1.0);
+            } else {
+                if self.push > 0.0 {
+                    let angle = Direction::new_from_angle(&self.angle);
+
+                    let cast = world.scene.physical.cast_ray(
+                        world.scene.camera_3d.position,
+                        angle.x,
+                        2.0,
+                        true,
+                        Some(self.presence.rigid),
+                        QueryFilter::default().exclude_sensors(),
+                    );
+
+                    if cast.is_some() {
+                        self.shake = self.push * 0.15;
+
+                        // TO-DO past a certain threshold, ignore angle on push jump and just push upward anyway?
+                        let boost = angle.x * 5.0 * self.push;
+
+                        if self.speed.y < 0.0 {
+                            // allow player to pogo jump off floor if falling down
+                            self.speed.x -= boost.x;
+                            self.speed.y = -boost.y;
+                            self.speed.z -= boost.z;
+                        } else if self.angle.y >= 60.0 {
+                            self.speed.y += 5.0 * self.push;
+                        } else {
+                            self.speed -= boost;
+                        }
+                    } else if !self.floor {
+                        if self.angle.y >= 60.0 {
+                            self.speed.x = 0.0;
+                            self.speed.z = 0.0;
+                            self.state = PlayerState::Slam { time: 0.0 };
+                        } else {
+                            self.zoom = self.push;
+
+                            self.speed += angle.x * 5.0 * self.push;
+                        }
+                    }
+                }
+
+                self.push = 0.0;
+            }
         }
 
         //================================================================
-
-        let movement = world.scene.physical.move_controller(
-            self.presence.collider,
-            self.character,
-            self.speed,
-        )?;
-        let position = if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
-            self.speed * World::TIME_STEP
-        } else {
-            Vector3::new(
-                movement.translation.x,
-                movement.translation.y,
-                movement.translation.z,
-            )
-        };
-
-        if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
-            world.scene.physical.set_collider_point(
-                self.presence.collider,
-                self.point + self.speed * World::TIME_STEP,
-            )?;
-        }
-
-        self.clash = false;
-        self.slide = movement.is_sliding_down_slope;
-
-        if self.speed * World::TIME_STEP != position {
-            self.clash = true;
-        }
-
-        self.point += position;
-        self.floor = if handle.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
-            true
-        } else {
-            movement.grounded
-        };
 
         app.user.input_move_x_a.wipe();
         app.user.input_move_x_b.wipe();
@@ -403,8 +374,13 @@ impl PlayerState {
         0.0
     }
 
-    fn tick(player: &mut Player, app: &App, handle: &RaylibHandle) {
-        match player.app {
+    fn tick(
+        player: &mut Player,
+        app: &App,
+        world: &mut World,
+        handle: &RaylibHandle,
+    ) -> anyhow::Result<()> {
+        match player.state {
             Self::Walk { ref mut jump } => {
                 *jump -= *jump * World::TIME_STEP * 4.0;
 
@@ -422,72 +398,30 @@ impl PlayerState {
                         app.user.input_move_z_b,
                     );
                 let move_which = move_x + move_z;
-                let move_where = move_which.normalized();
-                let move_speed = move_which.length();
-
-                //================================================================
 
                 if player.floor {
-                    // on-floor movement.
-                    if player.speed.y != 0.0 {
-                        // camera fall animation.
-                        if player.speed.y <= -2.0 {
-                            *jump = -0.5
-                        }
-
-                        player.speed.y = 0.0;
-                    }
-
                     if app.user.input_jump.down(handle) {
-                        player.speed.y = Self::SPEED_JUMP;
-                        *jump = 0.5;
-                    }
-
-                    let self_speed = Vector3::new(player.speed.x, 0.0, player.speed.z);
-
-                    if self_speed.x.abs() >= 0.0 || self_speed.z.abs() >= 0.0 {
-                        let mut self_length = self_speed.length();
-
-                        if self_length < Self::SPEED_MIN {
-                            self_length = 1.0
-                                - World::TIME_STEP
-                                    * (Self::SPEED_MIN / self_length)
-                                    * Self::SPEED_FALL;
-                        } else {
-                            self_length = 1.0 - World::TIME_STEP * Self::SPEED_FALL;
-                        }
-
-                        if self_length < 0.0 {
-                            player.speed.x = 0.0;
-                            player.speed.z = 0.0;
-                        } else {
-                            player.speed.x *= self_length;
-                            player.speed.z *= self_length;
-                        }
-                    }
-
-                    let self_length = move_speed - (player.speed.dot(move_where));
-
-                    if self_length > 0.0 {
-                        player.speed += move_where
-                            * self_length.min(Self::SPEED_RISE * move_speed * World::TIME_STEP);
-                    }
-                } else {
-                    // in-air movement.
-                    player.speed.y -= Self::SPEED_AIR_FALL * World::TIME_STEP;
-
-                    let speed_length = if move_speed < Self::SPEED_AIR_MIN {
-                        move_speed - (player.speed.dot(move_where))
-                    } else {
-                        Self::SPEED_AIR_MIN - (player.speed.dot(move_where))
-                    };
-
-                    if speed_length > 0.0 {
-                        player.speed += move_where
-                            * speed_length
-                                .min(Self::SPEED_AIR_RISE * move_speed * World::TIME_STEP);
+                        player.speed.y = 2.75;
+                        player.floor = false;
                     }
                 }
+
+                let mut controller = KinematicCharacterController::default();
+                controller.autostep = Some(CharacterAutostep {
+                    max_height: CharacterLength::Relative(0.75),
+                    min_width: CharacterLength::Relative(0.5),
+                    include_dynamic_bodies: true,
+                });
+
+                movement_walk(
+                    &mut world.scene.physical,
+                    player.presence.collider,
+                    controller,
+                    move_which,
+                    &mut player.point,
+                    &mut player.speed,
+                    &mut player.floor,
+                )
             }
             Self::Slam { ref mut time } => {
                 *time += World::TIME_STEP * 4.0;
@@ -496,16 +430,25 @@ impl PlayerState {
 
                 if player.floor {
                     let shake = (player.speed.y.abs() / 64.0).min(1.0) * 0.1;
-
                     player.shake = shake;
-                    player.app = Self::Walk { jump: 0.0 }
+                    player.state = Self::Walk { jump: 0.0 }
                 }
+
+                movement_walk(
+                    &mut world.scene.physical,
+                    player.presence.collider,
+                    KinematicCharacterController::default(),
+                    player.speed,
+                    &mut player.point,
+                    &mut player.speed,
+                    &mut player.floor,
+                )
             }
         }
     }
 
     fn view(player: &Player, app: &App, draw: &RaylibHandle) -> View {
-        match player.app {
+        match player.state {
             Self::Walk { jump, .. } => {
                 let direction = Direction::new_from_angle(&player.angle);
 
@@ -536,5 +479,36 @@ impl PlayerState {
                 app.user.video_field + 10.0,
             ),
         }
+    }
+}
+
+//================================================================
+
+pub trait Wield {
+    fn draw_r3d(
+        &mut self,
+        _app: &mut App,
+        _context: &mut Context,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn draw_2d(
+        &mut self,
+        _app: &mut App,
+        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn tick(
+        &mut self,
+        _app: &mut App,
+        _context: &mut Context,
+        _world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
     }
 }

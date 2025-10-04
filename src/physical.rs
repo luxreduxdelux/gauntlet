@@ -54,7 +54,7 @@ use crate::world::*;
 //================================================================
 
 use rapier3d::{
-    control::{EffectiveCharacterMovement, KinematicCharacterController},
+    control::{CharacterCollision, EffectiveCharacterMovement, KinematicCharacterController},
     parry::query::ShapeCastOptions,
     prelude::*,
 };
@@ -64,14 +64,14 @@ use std::sync::Mutex;
 
 //================================================================
 
-#[derive(Default)]
+#[derive(Default, Copy, Clone)]
 pub struct Presence {
     pub rigid: RigidBodyHandle,
     pub collider: ColliderHandle,
 }
 
 impl Presence {
-    // Convenience function for creating a fixed rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
+    /// Convenience function for creating a fixed rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
     pub fn new_rigid_cuboid_fixed(
         physical: &mut Physical,
         point: Vector3,
@@ -88,7 +88,7 @@ impl Presence {
         Ok(Self { rigid, collider })
     }
 
-    // Convenience function for creating a dynamic rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
+    /// Convenience function for creating a dynamic rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
     pub fn new_rigid_cuboid_dynamic(
         physical: &mut Physical,
         point: Vector3,
@@ -103,6 +103,11 @@ impl Presence {
         let collider = physical.new_cuboid(scale, Some(rigid));
 
         Ok(Self { rigid, collider })
+    }
+
+    /// Remove this presence from the simulation. WARNING: continuing to use this Presence instance after this call WILL most likely panic!
+    pub fn remove(&self, physical: &mut Physical) {
+        physical.remove_rigid(self.rigid, true);
     }
 }
 
@@ -128,7 +133,7 @@ impl Physical {
     pub const GROUP_ENTITY: InteractionGroups =
         InteractionGroups::new(Group::GROUP_2, Group::GROUP_2);
 
-    // Run a tick in the physical simulation.
+    /// Run a tick in the physical simulation.
     pub fn tick(&mut self) {
         if let Ok(lock) = &mut self.collision_handler.collision_list.lock() {
             lock.clear();
@@ -150,7 +155,7 @@ impl Physical {
         );
     }
 
-    // Draw the physical simulation's state.
+    /// Draw the physical simulation's state.
     pub fn draw(&mut self) {
         self.debug_render_pipeline.render(
             &mut DebugRender {},
@@ -313,9 +318,10 @@ impl Physical {
         collider_handle: ColliderHandle,
         character: KinematicCharacterController,
         speed: Vector3,
-    ) -> anyhow::Result<EffectiveCharacterMovement> {
+    ) -> anyhow::Result<(Option<CharacterCollision>, EffectiveCharacterMovement)> {
         let wish_speed = vector![speed.x, speed.y, speed.z] * World::TIME_STEP;
         let mut collision = vec![];
+        let mut collision_character = None;
 
         let movement = {
             let collider = self.get_collider(collider_handle)?;
@@ -335,7 +341,10 @@ impl Physical {
                 collider.shape(),
                 collider.position(),
                 wish_speed,
-                |event| collision.push(event),
+                |event| {
+                    collision_character = Some(event);
+                    collision.push(event);
+                },
             )
         };
 
@@ -358,12 +367,13 @@ impl Physical {
             &collision,
         );
 
+        // TO-DO move this out of here
         let collider = self.get_collider_mutable(collider_handle)?;
         let position = collider.translation() + movement.translation;
 
         collider.set_translation(position);
 
-        Ok(movement)
+        Ok((collision_character, movement))
     }
 
     //================================================================
@@ -380,6 +390,18 @@ impl Physical {
         let rigid = RigidBodyBuilder::dynamic().build();
 
         self.rigid_body_set.insert(rigid)
+    }
+
+    /// Remove a rigid body, and optionally, any collider bound to it, from the simulation.
+    pub fn remove_rigid(&mut self, handle: RigidBodyHandle, remove_collider: bool) {
+        self.rigid_body_set.remove(
+            handle,
+            &mut self.island_manager,
+            &mut self.collider_set,
+            &mut self.impulse_joint_set,
+            &mut self.multibody_joint_set,
+            remove_collider,
+        );
     }
 
     /// Get the actual rigid body from a handle.
@@ -442,6 +464,18 @@ impl Physical {
 
         self.get_rigid_mutable(handle)?
             .set_rotation(Rotation::new(vector![angle.x, angle.y, angle.z]), true);
+
+        Ok(())
+    }
+
+    /// Apply an impulse to a rigid body.
+    pub fn apply_rigid_impulse(
+        &mut self,
+        handle: RigidBodyHandle,
+        impulse: Vector3,
+    ) -> anyhow::Result<()> {
+        self.get_rigid_mutable(handle)?
+            .apply_impulse(vector![impulse.x, impulse.y, impulse.z], true);
 
         Ok(())
     }

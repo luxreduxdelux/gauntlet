@@ -48,31 +48,56 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-use std::any::Any;
-
 use crate::app::*;
+use crate::entity::implementation::*;
+use crate::physical::*;
 use crate::world::*;
 
 //================================================================
 
 use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Default, Copy, Clone)]
-pub struct EntityInfo {
-    pub index: usize,
-    pub close: bool,
+#[derive(Serialize, Deserialize, Clone)]
+pub struct Target {
+    point: Vector3,
+    angle: Vector3,
+    #[serde(skip)]
+    presence: Presence,
+    #[serde(skip)]
+    info: EntityInfo,
 }
 
-#[typetag::serde(tag = "type")]
-pub trait Entity: Any {
-    fn create<'a>(
+#[typetag::serde]
+impl Entity for Target {
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
+    }
+
+    fn create(
         &mut self,
         _app: &mut App,
-        _context: &'a mut Context,
-        _world: &mut World<'a>,
+        context: &mut Context,
+        world: &mut World,
     ) -> anyhow::Result<()> {
+        world
+            .scene
+            .asset
+            .set_model(context, "data/video/target.glb")?;
+
+        self.presence = Presence::new_rigid_cuboid_fixed(
+            &mut world.scene.physical,
+            self.point,
+            self.angle,
+            Vector3::new(0.25, 0.25, 0.25),
+            &self.info,
+        )?;
+
         Ok(())
     }
 
@@ -80,73 +105,28 @@ pub trait Entity: Any {
         &mut self,
         _app: &mut App,
         _context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn detach(
-        &mut self,
-        app: &mut App,
-        context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        self.get_info_mutable().close = true;
-        self.remove(app, context, world)?;
+        self.presence.remove(&mut world.scene.physical);
 
         Ok(())
     }
-
-    //================================================================
-
-    fn get_info(&self) -> &EntityInfo;
-    fn get_info_mutable(&mut self) -> &mut EntityInfo;
-
-    //================================================================
 
     fn draw_r3d(
         &mut self,
         _app: &mut App,
-        _context: &mut Context,
-        _world: &mut World,
+        context: &mut Context,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        Ok(())
-    }
+        let model = world.scene.asset.get_model("data/video/target.glb")?;
 
-    fn draw_3d(
-        &mut self,
-        _app: &mut App,
-        _draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
+        let transform = world
+            .scene
+            .physical
+            .get_rigid_transform(self.presence.rigid)?;
 
-    fn draw_2d(
-        &mut self,
-        _app: &mut App,
-        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
+        model.model.draw_pro(&mut context.r3d, transform);
 
-    fn tick(
-        &mut self,
-        _app: &mut App,
-        _context: &mut Context,
-        _world: &mut World,
-    ) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    fn interact(
-        &mut self,
-        _app: &mut App,
-        _context: &mut Context,
-        _world: &mut World,
-        _other: &mut dyn Entity,
-    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -158,16 +138,8 @@ pub trait Entity: Any {
         _other: &mut dyn Entity,
         _count: u32,
     ) -> anyhow::Result<()> {
+        println!("target!");
+
         Ok(())
-    }
-}
-
-impl dyn Entity {
-    pub fn as_any(&self) -> &dyn Any {
-        self
-    }
-
-    pub fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }

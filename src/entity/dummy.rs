@@ -95,7 +95,7 @@ impl Entity for Dummy {
     }
 
     #[rustfmt::skip]
-    fn initialize(
+    fn create(
         &mut self,
         _app: &mut App,
         context: &mut Context,
@@ -219,7 +219,7 @@ impl Entity for Dummy {
     fn tick(
         &mut self,
         app: &mut App,
-        _handle: &mut RaylibHandle,
+        _context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.animation

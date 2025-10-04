@@ -50,10 +50,14 @@
 
 use crate::app::*;
 use crate::asset::*;
+use crate::physical::*;
 use crate::world::*;
 
 //================================================================
 
+use rapier3d::control::CharacterCollision;
+use rapier3d::control::KinematicCharacterController;
+use rapier3d::prelude::ColliderHandle;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -204,6 +208,114 @@ impl Animation {
 
         Ok(None)
     }
+}
+
+//================================================================
+
+pub fn movement_walk(
+    physical: &mut Physical,
+    collider: ColliderHandle,
+    character: KinematicCharacterController,
+    direction: Vector3,
+    point: &mut Vector3,
+    speed: &mut Vector3,
+    floor: &mut bool,
+) -> anyhow::Result<()> {
+    const SPEED_MIN: f32 = 0.10;
+    const SPEED_MAX: f32 = 8.00;
+    const SPEED_RISE: f32 = 4.50;
+    const SPEED_FALL: f32 = 8.00;
+    const SPEED_AIR_MIN: f32 = 1.0;
+    const SPEED_AIR_RISE: f32 = 4.00;
+    const SPEED_AIR_FALL: f32 = 8.00;
+    const SPEED_JUMP: f32 = 2.75;
+
+    let move_where = direction.normalized();
+    let move_speed = direction.length();
+
+    if *floor {
+        // on-floor movement.
+        if speed.y != 0.0 {
+            /*
+            // camera fall animation.
+            if speed.y <= -2.0 {
+                *jump = -0.5
+            }
+            */
+
+            speed.y = 0.0;
+        }
+
+        /*
+        if app.user.input_jump.down(handle) {
+            speed.y = Self::SPEED_JUMP;
+            *jump = 0.5;
+        }
+        */
+
+        let self_speed = Vector3::new(speed.x, 0.0, speed.z);
+
+        if self_speed.x.abs() >= 0.0 || self_speed.z.abs() >= 0.0 {
+            let mut self_length = self_speed.length();
+
+            // TO-DO add edge friction
+
+            if self_length < SPEED_MIN {
+                self_length = 1.0 - World::TIME_STEP * (SPEED_MIN / self_length) * SPEED_FALL;
+            } else {
+                self_length = 1.0 - World::TIME_STEP * SPEED_FALL;
+            }
+
+            if self_length < 0.0 {
+                speed.x = 0.0;
+                speed.z = 0.0;
+            } else {
+                speed.x *= self_length;
+                speed.z *= self_length;
+            }
+        }
+
+        let self_length = move_speed - (speed.dot(move_where));
+
+        if self_length > 0.0 {
+            *speed += move_where * self_length.min(SPEED_RISE * move_speed * World::TIME_STEP);
+        }
+    } else {
+        // in-air movement.
+        speed.y -= SPEED_AIR_FALL * World::TIME_STEP;
+
+        let speed_length = if move_speed < SPEED_AIR_MIN {
+            move_speed - (speed.dot(move_where))
+        } else {
+            SPEED_AIR_MIN - (speed.dot(move_where))
+        };
+
+        if speed_length > 0.0 {
+            *speed += move_where * speed_length.min(SPEED_AIR_RISE * move_speed * World::TIME_STEP);
+        }
+    }
+
+    let (collision, movement) = physical.move_controller(collider, character, *speed)?;
+
+    *point = Vector3::new(
+        point.x + movement.translation.x,
+        point.y + movement.translation.y,
+        point.z + movement.translation.z,
+    );
+
+    // slide off wall.
+    if let Some(collision) = collision {
+        let normal = Vector3::new(
+            collision.hit.normal2.x,
+            collision.hit.normal2.y,
+            collision.hit.normal2.z,
+        );
+        *speed -= normal * speed.dot(normal);
+    }
+
+    *floor = movement.grounded;
+
+    Ok(())
 }
 
 //================================================================

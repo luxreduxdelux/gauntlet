@@ -80,7 +80,7 @@ impl Entity for Destructible {
         &mut self.info
     }
 
-    fn initialize(
+    fn create(
         &mut self,
         _app: &mut App,
         context: &mut Context,

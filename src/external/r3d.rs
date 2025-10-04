@@ -14,11 +14,7 @@ mod ffi {
 
 impl From<Vector3> for ffi::Vector3 {
     fn from(val: Vector3) -> Self {
-        ffi::Vector3 {
-            x: val.x,
-            y: val.y,
-            z: val.z,
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
@@ -48,29 +44,19 @@ impl From<ffi::Transform> for Transform {
 
 impl From<ffi::BoundingBox> for BoundingBox {
     fn from(val: ffi::BoundingBox) -> Self {
-        BoundingBox {
-            min: val.min.into(),
-            max: val.max.into(),
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
 impl From<BoundingBox> for ffi::BoundingBox {
     fn from(val: BoundingBox) -> Self {
-        ffi::BoundingBox {
-            min: val.min.into(),
-            max: val.max.into(),
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
 impl From<ffi::Vector3> for Vector3 {
     fn from(val: ffi::Vector3) -> Self {
-        Vector3 {
-            x: val.x,
-            y: val.y,
-            z: val.z,
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
@@ -88,23 +74,13 @@ impl From<Camera3D> for ffi::Camera3D {
 
 impl From<Color> for ffi::Color {
     fn from(val: Color) -> Self {
-        ffi::Color {
-            r: val.r,
-            g: val.g,
-            b: val.b,
-            a: val.a,
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
 impl From<ffi::Color> for Color {
     fn from(val: ffi::Color) -> Self {
-        Color {
-            r: val.r,
-            g: val.g,
-            b: val.b,
-            a: val.a,
-        }
+        unsafe { std::mem::transmute(val) }
     }
 }
 
@@ -120,7 +96,6 @@ impl Handle {
         unsafe {
             let flag = ffi::R3D_FLAG_BLIT_LINEAR
                 | ffi::R3D_FLAG_FORCE_FORWARD
-                | ffi::R3D_FLAG_NO_FRUSTUM_CULLING
                 | ffi::R3D_FLAG_DEPTH_PREPASS
                 | ffi::R3D_FLAG_8_BIT_NORMALS
                 | ffi::R3D_FLAG_LOW_PRECISION_BUFFERS;

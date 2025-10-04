@@ -60,21 +60,14 @@ use serde::Deserialize;
 
 //================================================================
 
-#[derive(Deserialize)]
+#[derive(Default)]
 pub struct World<'a> {
-    pub level: Vec<String>,
     pub entity_list: Vec<Box<dyn Entity>>,
-    #[serde(skip)]
     pub time: f32,
-    #[serde(skip)]
     step: f32,
-    #[serde(skip)]
     entity_index: usize,
-    #[serde(skip)]
     entity_attach: Vec<Box<dyn Entity>>,
-    #[serde(skip)]
     pub scene: Scene<'a>,
-    #[serde(skip)]
     pub player: Option<usize>,
 }
 
@@ -82,74 +75,39 @@ impl<'a> World<'a> {
     pub const TIME_STEP: f32 = 1.0 / 144.0;
 
     pub fn new(app: &mut App, context: &mut Context) -> anyhow::Result<Self> {
-        let path = "tutorial";
-        let file = &format!("data/level/{path}/{path}.json");
-        let file = std::fs::read_to_string(file)?;
-        let mut file: Self = serde_json::from_str(&file)?;
+        let mut world = World::default();
 
-        for level in &file.level {
-            file.scene
-                .room_add(context, &format!("data/level/{path}/{level}"))?;
+        if app.user.tutorial {
+            let level = Level::new("data/level/tutorial/tutorial.json")?;
+
+            for model in &level.level {
+                world
+                    .scene
+                    .room_add(context, &format!("data/level/tutorial/{model}"))?;
+            }
+
+            world.fuse_level(level);
+        } else {
+            // TO-DO random level generation algorithm goes here.
         }
 
         // entity index 0 is meant for the level's rigid-body.
-        file.entity_index = 1;
+        world.entity_index = 1;
 
         unsafe {
-            let world = &mut file as *mut Self;
+            let wrl = &mut world as *mut Self;
             let ctx = context as *mut Context;
 
-            for entity in &mut file.entity_list {
-                file.entity_index += 1;
-                entity.get_info_mutable().index = file.entity_index - 1;
-                entity.initialize(app, &mut *ctx, &mut *world)?;
+            for entity in &mut world.entity_list {
+                world.entity_index += 1;
+                entity.get_info_mutable().index = world.entity_index - 1;
+                entity.create(app, &mut *ctx, &mut *wrl)?;
             }
         }
 
-        file.scene.initialize(app, context)?;
+        world.scene.initialize(app, context)?;
 
-        Ok(file)
-    }
-
-    pub fn entity_from_collider(
-        &mut self,
-        collider: ColliderHandle,
-    ) -> anyhow::Result<Option<&Box<dyn Entity>>> {
-        let collider = self.scene.physical.get_collider(collider)?;
-
-        if let Some(parent) = collider.parent()
-            && let Ok(rigid) = self.scene.physical.get_rigid(parent)
-        {
-            return Ok(self.entity_find(rigid.user_data as usize));
-        }
-
-        Ok(None)
-    }
-
-    pub fn entity_attach<T: Entity>(&mut self, mut entity: T) {
-        let info = entity.get_info_mutable();
-        info.index = self.entity_index;
-        self.entity_index += 1;
-        self.entity_attach.push(Box::new(entity));
-    }
-
-    pub fn entity_detach<T: Entity>(&mut self, entity: &mut T) {
-        entity.get_info_mutable().close = true;
-        // TO-DO run entity.close() destructor here?
-    }
-
-    pub fn entity_find(&self, index: usize) -> Option<&Box<dyn Entity>> {
-        self.entity_list
-            .iter()
-            .find(|entity| entity.get_info().index == index)
-            .map(|v| v as _)
-    }
-
-    pub fn entity_find_mutable(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
-        self.entity_list
-            .iter_mut()
-            .find(|entity| entity.get_info().index == index)
-            .map(|v| v as _)
+        Ok(world)
     }
 
     pub fn main(
@@ -181,7 +139,7 @@ impl<'a> World<'a> {
 
                 unsafe {
                     for entity in &mut self.entity_list {
-                        entity.tick(app, &mut context.handle, &mut *world)?;
+                        entity.tick(app, context, &mut *world)?;
                     }
                 }
 
@@ -200,18 +158,16 @@ impl<'a> World<'a> {
         self.scene.update(app, context)?;
 
         unsafe {
-            let context = context as *mut Context;
-
             if !pause {
-                self.scene.draw_r3d(&mut *context, |_| {
+                self.scene.draw_r3d(context, |context| {
                     for entity in &mut self.entity_list {
-                        entity.draw_r3d(app, &mut *context, &mut *world)?;
+                        entity.draw_r3d(app, context, &mut *world)?;
                     }
 
                     Ok(())
                 })?;
 
-                self.scene.draw_3d(&mut *context, draw, |draw| {
+                self.scene.draw_3d(context, draw, |draw| {
                     for entity in &mut self.entity_list {
                         entity.draw_3d(app, draw, &mut *world)?;
                     }
@@ -220,7 +176,7 @@ impl<'a> World<'a> {
                 })?;
             }
 
-            self.scene.draw_2d(&mut *context, draw, |draw| {
+            self.scene.draw_2d(context, draw, |draw| {
                 if !pause {
                     for entity in &mut self.entity_list {
                         entity.draw_2d(app, draw, &mut *world)?;
@@ -232,5 +188,98 @@ impl<'a> World<'a> {
         }
 
         Ok(())
+    }
+
+    pub fn entity_from_collider(
+        &self,
+        collider: ColliderHandle,
+    ) -> anyhow::Result<Option<&Box<dyn Entity>>> {
+        let collider = self.scene.physical.get_collider(collider)?;
+
+        if let Some(parent) = collider.parent()
+            && let Ok(rigid) = self.scene.physical.get_rigid(parent)
+        {
+            return Ok(self.entity_find(rigid.user_data as usize));
+        }
+
+        Ok(None)
+    }
+
+    pub fn entity_from_collider_mutable(
+        &mut self,
+        collider: ColliderHandle,
+    ) -> anyhow::Result<Option<&mut Box<dyn Entity>>> {
+        let collider = self.scene.physical.get_collider(collider)?;
+
+        if let Some(parent) = collider.parent()
+            && let Ok(rigid) = self.scene.physical.get_rigid(parent)
+        {
+            return Ok(self.entity_find_mutable(rigid.user_data as usize));
+        }
+
+        Ok(None)
+    }
+
+    pub fn entity_attach<T: Entity>(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        mut entity: T,
+    ) -> anyhow::Result<usize> {
+        let ctx = { context as *mut Context };
+
+        self.entity_index += 1;
+        entity.get_info_mutable().index = self.entity_index - 1;
+        entity.create(app, unsafe { &mut *ctx }, self)?;
+        self.entity_attach.push(Box::new(entity));
+
+        Ok(self.entity_index - 1)
+    }
+
+    pub fn entity_find(&self, index: usize) -> Option<&Box<dyn Entity>> {
+        self.entity_list
+            .iter()
+            .find(|entity| entity.get_info().index == index)
+            .map(|v| v as _)
+    }
+
+    pub fn entity_find_mutable(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
+        self.entity_list
+            .iter_mut()
+            .find(|entity| entity.get_info().index == index)
+            .map(|v| v as _)
+    }
+
+    pub fn entity_find_type<T: Entity>(&self, index: usize) -> Option<&T> {
+        self.entity_list
+            .iter()
+            .find(|entity| entity.get_info().index == index && entity.as_any().is::<T>())
+            .map(|v| v.as_any().downcast_ref::<T>().unwrap())
+    }
+
+    pub fn entity_find_mutable_type<T: Entity>(&mut self, index: usize) -> Option<&mut T> {
+        self.entity_list
+            .iter_mut()
+            .find(|entity| entity.get_info().index == index && entity.as_any().is::<T>())
+            .map(|v| v.as_any_mut().downcast_mut::<T>().unwrap())
+    }
+
+    fn fuse_level(&mut self, level: Level) {
+        self.entity_list.extend(level.entity_list);
+    }
+}
+
+//================================================================
+
+#[derive(Deserialize)]
+struct Level {
+    level: Vec<String>,
+    entity_list: Vec<Box<dyn Entity>>,
+}
+
+impl Level {
+    fn new(path: &str) -> anyhow::Result<Self> {
+        let file = std::fs::read_to_string(path)?;
+        Ok(serde_json::from_str(&file)?)
     }
 }

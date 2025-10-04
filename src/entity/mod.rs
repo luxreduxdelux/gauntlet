@@ -55,3 +55,5 @@ pub mod enemy;
 pub mod implementation;
 pub mod light;
 pub mod player;
+pub mod target;
+pub mod weapon;

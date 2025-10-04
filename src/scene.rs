@@ -425,12 +425,13 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn draw_r3d<F: FnMut(&mut Handle) -> anyhow::Result<()>>(
+    pub fn draw_r3d<F: FnMut(&mut Context) -> anyhow::Result<()>>(
         &mut self,
         context: &mut Context,
         mut call: F,
     ) -> anyhow::Result<()> {
-        let scene = { self as *mut Self };
+        let ctx = { context as *mut Context };
+        let scn = { self as *mut Self };
 
         let texture = self.texture.as_mut().unwrap();
         let mut result = Ok(());
@@ -448,7 +449,7 @@ impl<'a> Scene<'a> {
                         let model = self.asset.get_model(&room.path).unwrap();
                         model.model.draw(r3d, Vector3::zero(), 1.0);
                     }
-                } else if let Some(room) = (*scene).room_active_index(self.camera_3d.position) {
+                } else if let Some(room) = (*scn).room_active_index(self.camera_3d.position) {
                     Room::traverse(
                         room,
                         r3d,
@@ -458,10 +459,10 @@ impl<'a> Scene<'a> {
                         true,
                     );
                 }
-            }
 
-            // scene should be in charge of level geometry rendering...?
-            result = call(r3d);
+                // scene should be in charge of level geometry rendering...?
+                result = call(&mut *ctx);
+            }
         });
 
         result
@@ -481,7 +482,9 @@ impl<'a> Scene<'a> {
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
         let mut draw = draw.begin_mode3D(self.camera_3d);
 
-        //self.physical.draw();
+        if draw.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) {
+            self.physical.draw();
+        }
 
         call(&mut draw)
     }
