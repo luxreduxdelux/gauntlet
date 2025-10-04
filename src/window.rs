@@ -116,9 +116,11 @@ impl<'a> Window<'a> {
             }
         }
 
+        self.scene.initialize(app, context)?;
+
         self.scene.room_add(context, "data/video/menu.glb")?;
 
-        self.scene.initialize(app, context)?;
+        self.scene.link()?;
 
         self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_l.png")?;
         self.scene.asset.set_texture(context, "data/video/glyph/mouse/button_m.png")?;

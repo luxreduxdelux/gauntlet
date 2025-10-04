@@ -61,6 +61,26 @@ use crate::utility::*;
 
 //================================================================
 
+#[derive(Default, Copy, Clone)]
+pub enum LightMode {
+    #[default]
+    Point = 0,
+    Directional = 1,
+}
+
+#[derive(Default)]
+struct Light {
+    active: i32,
+    mode: i32,
+    point: i32,
+    focus: i32,
+    color: i32,
+    power: i32,
+    range: i32,
+}
+
+// TO-DO implement light system
+// TO-DO implement particle system
 // TO-DO: been told by raylib contributor to use another audio solution for
 // spacialization and better audio management, research another library.
 pub struct Scene<'a> {
@@ -70,7 +90,7 @@ pub struct Scene<'a> {
     texture: Option<RenderTexture2D>,
     sound_list: Vec<Noise>,
     music_list: Vec<Noise>,
-    //pub light_list: Vec<Light>,
+    pub light_list: Vec<Light>,
     pub room_list: Vec<Room>,
     pub view_list: Vec<View>,
     pub path_list: Vec<Path>,
@@ -81,6 +101,102 @@ pub struct Scene<'a> {
 }
 
 impl<'a> Scene<'a> {
+    pub fn light_add(
+        &mut self,
+        point: Vector3,
+        focus: Vector3,
+        color: Color,
+        power: f32,
+        range: f32,
+    ) -> anyhow::Result<usize> {
+        let shader = self.asset.get_shader("light")?;
+        let mut light = Light::default();
+        let index = self.light_list.len();
+
+        light.active = shader.get_shader_location(&format!("light_list[{}].active", index));
+        light.mode = shader.get_shader_location(&format!("light_list[{}].mode", index));
+        light.point = shader.get_shader_location(&format!("light_list[{}].point", index));
+        light.focus = shader.get_shader_location(&format!("light_list[{}].focus", index));
+        light.color = shader.get_shader_location(&format!("light_list[{}].color", index));
+        light.power = shader.get_shader_location(&format!("light_list[{}].power", index));
+        light.range = shader.get_shader_location(&format!("light_list[{}].range", index));
+
+        self.light_list.push(light);
+
+        self.light_set_active(index, true)?;
+        self.light_set_mode(index, LightMode::Point)?;
+        self.light_set_point(index, point)?;
+        self.light_set_focus(index, focus)?;
+        self.light_set_color(index, color)?;
+        self.light_set_power(index, power)?;
+        self.light_set_range(index, range)?;
+
+        Ok(index)
+    }
+
+    pub fn light_set_active(&mut self, index: usize, active: bool) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.active, if active { 1 } else { 0 });
+
+        Ok(())
+    }
+
+    pub fn light_set_mode(&mut self, index: usize, mode: LightMode) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.mode, mode as i32);
+
+        Ok(())
+    }
+
+    pub fn light_set_point(&mut self, index: usize, point: Vector3) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.point, point);
+
+        Ok(())
+    }
+
+    pub fn light_set_focus(&mut self, index: usize, focus: Vector3) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.focus, focus);
+
+        Ok(())
+    }
+
+    pub fn light_set_color(&mut self, index: usize, color: Color) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+
+        let color = Vector4::new(
+            (color.r as f32 / 255.0) * 0.1,
+            (color.g as f32 / 255.0) * 0.1,
+            (color.b as f32 / 255.0) * 0.1,
+            (color.a as f32 / 255.0) * 0.1,
+        );
+
+        shader.set_shader_value(handle.color, color);
+
+        Ok(())
+    }
+
+    pub fn light_set_power(&mut self, index: usize, power: f32) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.power, power);
+
+        Ok(())
+    }
+    pub fn light_set_range(&mut self, index: usize, range: f32) -> anyhow::Result<()> {
+        let handle = &self.light_list[index];
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(handle.range, range);
+
+        Ok(())
+    }
+
     pub fn path_add(&mut self, point: Vector3) {
         self.path_list.push(Path { point });
         let point = (
@@ -172,23 +288,7 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn initialize(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
-        self.texture = Some(context.handle.load_render_texture(
-            &context.thread,
-            (context.handle.get_screen_width() as f32 * app.user.video_scale) as u32,
-            (context.handle.get_screen_height() as f32 * app.user.video_scale) as u32,
-        )?);
-
-        self.asset.set_shader(
-            context,
-            "screen",
-            Some("data/shader/base.vs"),
-            Some("data/shader/screen.fs"),
-        )?;
-
-        self.camera_3d =
-            Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
-
+    pub fn link(&mut self) -> anyhow::Result<()> {
         for (i_v, view) in self.view_list.iter_mut().enumerate() {
             for (i_r, room) in self.room_list.iter_mut().enumerate() {
                 let direction = Direction::new_from_angle(&view.angle);
@@ -210,6 +310,41 @@ impl<'a> Scene<'a> {
                 }
             }
         }
+
+        Ok(())
+    }
+
+    pub fn initialize(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
+        self.texture = Some(context.handle.load_render_texture(
+            &context.thread,
+            (context.handle.get_screen_width() as f32 * app.user.video_scale) as u32,
+            (context.handle.get_screen_height() as f32 * app.user.video_scale) as u32,
+        )?);
+
+        self.asset.set_shader(
+            context,
+            "screen",
+            Some("data/shader/base.vs"),
+            Some("data/shader/screen.fs"),
+        )?;
+
+        let light = self.asset.set_shader(
+            context,
+            "light",
+            Some("data/shader/light.vs"),
+            Some("data/shader/light.fs"),
+        )?;
+
+        light.locs_mut()[ShaderLocationIndex::SHADER_LOC_VECTOR_VIEW as usize] =
+            light.get_shader_location("viewPos");
+
+        light.set_shader_value(
+            light.get_shader_location("ambient"),
+            Vector4::new(0.25, 0.25, 0.25, 1.0),
+        );
+
+        self.camera_3d =
+            Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
 
         Ok(())
     }
@@ -246,12 +381,17 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
+    // TO-DO move room_* into Room, same with other stuff
     pub fn room_add(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
         if self.room_rigid.is_none() {
             self.room_rigid = Some(self.physical.new_rigid_fixed());
         }
 
+        let shader = self.asset.get_shader("light")? as *const Shader;
         let model = self.asset.set_model(context, path)?;
+
+        model.model.materials_mut()[1].shader = unsafe { **shader };
+
         let bound = model.model.get_model_bounding_box();
 
         let collider = self
@@ -431,6 +571,12 @@ impl<'a> Scene<'a> {
         draw: &mut RaylibDrawHandle,
         mut call: F,
     ) -> anyhow::Result<()> {
+        let shader = self.asset.get_shader("light")?;
+        shader.set_shader_value(
+            shader.locs()[ShaderLocationIndex::SHADER_LOC_VECTOR_VIEW as usize],
+            self.camera_3d.position,
+        );
+
         let scn = { self as *mut Self };
         let texture = self.texture.as_mut().unwrap();
         let mut draw = draw.begin_texture_mode(&context.thread, texture);
@@ -522,7 +668,7 @@ impl<'a> Default for Scene<'a> {
             texture: None,
             sound_list: Vec::default(),
             music_list: Vec::default(),
-            //light_list: Vec::default(),
+            light_list: Vec::default(),
             room_list: Vec::default(),
             view_list: Vec::default(),
             path_list: Vec::default(),

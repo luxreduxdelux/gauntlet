@@ -183,7 +183,7 @@ impl Context {
             .build();
 
         handle.set_exit_key(None);
-        handle.set_trace_log(TraceLogLevel::LOG_ERROR);
+        //handle.set_trace_log(TraceLogLevel::LOG_ERROR);
 
         let audio = RaylibAudio::init_audio_device()?;
 

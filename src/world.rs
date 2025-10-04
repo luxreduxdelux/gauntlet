@@ -72,10 +72,12 @@ pub struct World<'a> {
 }
 
 impl<'a> World<'a> {
-    pub const TIME_STEP: f32 = 1.0 / 144.0;
+    pub const TIME_STEP: f32 = 1.0 / 60.0;
 
     pub fn new(app: &mut App, context: &mut Context) -> anyhow::Result<Self> {
         let mut world = World::default();
+
+        world.scene.initialize(app, context)?;
 
         if app.user.tutorial {
             let level = Level::new("data/level/tutorial/tutorial.json")?;
@@ -105,7 +107,7 @@ impl<'a> World<'a> {
             }
         }
 
-        world.scene.initialize(app, context)?;
+        world.scene.link()?;
 
         Ok(world)
     }

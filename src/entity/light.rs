@@ -186,11 +186,17 @@ pub struct Light {
     kind: LightKind,
     color: Color,
     #[serde(skip)]
+    active: bool,
+    #[serde(skip)]
+    power: f32,
+    #[serde(skip)]
+    range: f32,
+    #[serde(skip)]
     frame: f32,
     #[serde(skip)]
     focus: bool,
     //#[serde(skip)]
-    //handle: Option<crate::external::r3d::Light>,
+    handle: Option<usize>,
     #[serde(skip)]
     info: EntityInfo,
 }
@@ -208,24 +214,19 @@ impl Entity for Light {
         &mut self,
         _app: &mut App,
         context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        /*
-        let mut light = crate::external::r3d::Light::new(&mut context.r3d, self.mode);
+        self.active = true;
+        self.power = 4.00;
+        self.range = 0.25;
 
-        light.set_active(true);
-        light.set_color(self.color);
-        light.set_specular(0.0);
-
-        let direction = Direction::new_from_angle(&self.angle);
-
-        light.set_shadow_depth_bias(light.get_shadow_depth_bias() * 4.0);
-        light.set_shadow_update_mode(crate::external::r3d::ShadowUpdateMode::Manual);
-        light.enable_shadow(256);
-        light.look_at(self.point, self.point + direction.x);
-
-        self.handle = Some(light);
-        */
+        self.handle = Some(world.scene.light_add(
+            self.point,
+            Vector3::zero(),
+            self.color,
+            self.power,
+            self.range,
+        )?);
 
         Ok(())
     }
@@ -234,17 +235,17 @@ impl Entity for Light {
         &mut self,
         _app: &mut App,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        /*
         if let Some(handle) = &mut self.handle {
-            let active = _world.scene.room_active(self.point);
+            let active = world.scene.room_active(self.point);
 
-            if (active && !handle.is_active()) || (!active && handle.is_active()) {
-                handle.set_active(active);
+            if (active && !self.active) || (!active && self.active) {
+                self.active = !self.active;
+                println!("toggle {} -> {}", self.info.index, self.active);
+                world.scene.light_set_active(*handle, self.active)?;
             }
         }
-        */
 
         draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
 
@@ -258,26 +259,20 @@ impl Entity for Light {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        /*
         let focus = self.focus;
 
         if self.focus {
             Window::draw(app, draw, |app, draw| {
                 let handle = self.handle.as_mut().unwrap();
-                let color = handle.get_color();
-                let mut energy = handle.get_energy();
-                let mut range = handle.get_range();
-                let mut attenuation = handle.get_attenuation();
-                let mut r = color.r as f32;
-                let mut g = color.g as f32;
-                let mut b = color.b as f32;
+                let mut r = self.color.r as f32;
+                let mut g = self.color.g as f32;
+                let mut b = self.color.b as f32;
 
                 app.window.slider(draw, "Color (R)", &mut r, (0.0, 255.0), 1.0)?;
                 app.window.slider(draw, "Color (G)", &mut g, (0.0, 255.0), 1.0)?;
                 app.window.slider(draw, "Color (B)", &mut b, (0.0, 255.0), 1.0)?;
-                app.window.slider(draw, "Energy", &mut energy, (0.0, 4.0), 0.1)?;
-                app.window.slider(draw, "Range", &mut range, (0.0, 64.0), 1.0)?;
-                app.window.slider(draw, "Attenuation", &mut attenuation, (0.0, 4.0), 0.1)?;
+                app.window.slider(draw, "Power", &mut self.power, (0.0, 4.0), 0.1)?;
+                app.window.slider(draw, "Range", &mut self.range, (0.0, 4.0), 0.1)?;
                 app.window.switch(draw, "Kind", &mut self.kind, &[
                     LightKind::Normal,
                     LightKind::FlickerA,
@@ -293,12 +288,9 @@ impl Entity for Light {
                     LightKind::PulseE,
                 ])?;
 
-                handle.set_energy(energy);
-
-                handle.set_color(Color::new(r as u8, g as u8, b as u8, 255));
-                handle.set_energy(energy);
-                handle.set_range(range);
-                handle.set_attenuation(attenuation);
+                world.scene.light_set_color(*handle, Color::new(r as u8, g as u8, b as u8, 255))?;
+                world.scene.light_set_power(*handle, self.power)?;
+                world.scene.light_set_range(*handle, self.range)?;
 
                 let x_a = draw.is_key_pressed(KeyboardKey::KEY_W) || draw.is_key_pressed_repeat(KeyboardKey::KEY_W);
                 let x_b = draw.is_key_pressed(KeyboardKey::KEY_S) || draw.is_key_pressed_repeat(KeyboardKey::KEY_S);
@@ -314,7 +306,7 @@ impl Entity for Light {
                 point.z += if z_a { 1.0 } else if z_b { -1.0 } else { 0.0 };
 
                 self.point = point;
-                handle.set_position(point);
+                world.scene.light_set_point(*handle, point)?;
 
                 if draw.is_key_pressed(KeyboardKey::KEY_Q) {
                     self.focus = false;
@@ -344,7 +336,6 @@ impl Entity for Light {
                 // TO-DO make this happen automatically on set_device
                 draw.enable_cursor();
             }
-        */
 
         Ok(())
     }
@@ -353,11 +344,10 @@ impl Entity for Light {
         &mut self,
         _app: &mut App,
         _context: &mut Context,
-        _world: &mut World,
+        world: &mut World,
     ) -> anyhow::Result<()> {
-        /*
         if let Some(light) = &mut self.handle
-            && light.is_active()
+        //&& light.is_active()
         {
             let animation = self.kind.animation();
 
@@ -371,16 +361,17 @@ impl Entity for Light {
                     let frame_a = animation[frame - 1];
                     let frame_b = animation[frame];
                     let factor = (self.frame - frame as f32) / ((frame + 1) as f32 - frame as f32);
-                    light
-                        .set_energy(interpolate(frame_a, frame_b, ease_in_out_cubic(factor)) * 2.0);
+                    self.power = interpolate(frame_a, frame_b, ease_in_out_cubic(factor)) * 4.0;
+
+                    world.scene.light_set_power(*light, self.power)?;
                 } else {
-                    light.set_energy(animation[frame] * 2.0);
+                    self.power = animation[frame] * 4.0;
+                    world.scene.light_set_power(*light, self.power)?;
                 }
             }
 
-            light.update_shadow_map();
+            //light.update_shadow_map();
         }
-        */
 
         Ok(())
     }
