@@ -450,13 +450,17 @@ impl<'a> Room {
         scene
             .physical
             .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
-        scene.physical.set_collider_sensor(collider, true)?;
+        //scene.physical.set_collider_sensor(collider, true)?;
         scene
             .physical
             .set_collider_data(collider, scene.room_list.len() as u128)?;
-        scene
-            .physical
-            .set_collider_group(collider, Physical::GROUP_GEOMETRY)?;
+        scene.physical.set_collider_group(
+            collider,
+            InteractionGroups::new(
+                Physical::GROUP_GEOMETRY_SENSOR,
+                Physical::GROUP_GEOMETRY_SENSOR,
+            ),
+        )?;
 
         scene.physical.new_model(&model.model, scene.room_rigid)?;
 
@@ -478,9 +482,10 @@ impl<'a> Room {
         if let Some((_, collider)) = scene.physical.intersect_point(
             point,
             None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Physical::GROUP_GEOMETRY_SENSOR,
+                Physical::GROUP_GEOMETRY_SENSOR,
+            )),
         ) {
             scene.room_list[collider.user_data as usize].visible
                 || scene.room_list[collider.user_data as usize].view.is_empty()
@@ -495,9 +500,10 @@ impl<'a> Room {
             angle,
             shape,
             None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Physical::GROUP_GEOMETRY_SENSOR,
+                Physical::GROUP_GEOMETRY_SENSOR,
+            )),
         ) {
             scene.room_list[collider.user_data as usize].visible
         } else {
@@ -509,9 +515,10 @@ impl<'a> Room {
         if let Some((_, collider)) = scene.physical.intersect_point(
             point,
             None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Physical::GROUP_GEOMETRY_SENSOR,
+                Physical::GROUP_GEOMETRY_SENSOR,
+            )),
         ) {
             Some(collider.user_data as usize)
         } else {

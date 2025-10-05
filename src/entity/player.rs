@@ -63,8 +63,6 @@ use crate::world::*;
 //================================================================
 
 use rand::Rng;
-use rapier3d::control::CharacterAutostep;
-use rapier3d::control::CharacterLength;
 use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::*;
 use raylib::prelude::*;

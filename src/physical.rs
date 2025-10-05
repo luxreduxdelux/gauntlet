@@ -71,6 +71,25 @@ pub struct Presence {
 }
 
 impl Presence {
+    pub fn attach_cuboid(
+        &mut self,
+        physical: &mut Physical,
+        point: Vector3,
+        scale: Vector3,
+    ) -> anyhow::Result<ColliderHandle> {
+        let collider = physical.new_cuboid(scale, Some(self.rigid));
+        physical.set_collider_point(collider, point)?;
+        physical.set_collider_group(
+            collider,
+            InteractionGroups::new(
+                Physical::GROUP_ENTITY,
+                Physical::GROUP_ENTITY | Physical::GROUP_GEOMETRY,
+            ),
+        )?;
+
+        Ok(collider)
+    }
+
     /// Convenience function for creating a fixed rigid body with a cuboid collider, with point, angle, scale, and entity index already set.
     pub fn new_rigid_cuboid_fixed(
         physical: &mut Physical,
@@ -84,7 +103,13 @@ impl Presence {
         physical.set_rigid_angle(rigid, angle)?;
         physical.set_rigid_data(rigid, info.index as u128)?;
         let collider = physical.new_cuboid(scale, Some(rigid));
-        physical.set_collider_group(collider, Physical::GROUP_ENTITY)?;
+        physical.set_collider_group(
+            collider,
+            InteractionGroups::new(
+                Physical::GROUP_ENTITY,
+                Physical::GROUP_ENTITY | Physical::GROUP_GEOMETRY,
+            ),
+        )?;
 
         Ok(Self { rigid, collider })
     }
@@ -102,6 +127,13 @@ impl Presence {
         physical.set_rigid_angle(rigid, angle)?;
         physical.set_rigid_data(rigid, info.index as u128)?;
         let collider = physical.new_cuboid(scale, Some(rigid));
+        physical.set_collider_group(
+            collider,
+            InteractionGroups::new(
+                Physical::GROUP_ENTITY,
+                Physical::GROUP_ENTITY | Physical::GROUP_GEOMETRY,
+            ),
+        )?;
 
         Ok(Self { rigid, collider })
     }
@@ -129,10 +161,10 @@ pub struct Physical {
 }
 
 impl Physical {
-    pub const GROUP_GEOMETRY: InteractionGroups =
-        InteractionGroups::new(Group::GROUP_1, Group::GROUP_1);
-    pub const GROUP_ENTITY: InteractionGroups =
-        InteractionGroups::new(Group::GROUP_2, Group::GROUP_2);
+    pub const GROUP_ENTITY: Group = Group::GROUP_2;
+    pub const GROUP_ENTITY_SENSOR: Group = Group::GROUP_3;
+    pub const GROUP_GEOMETRY: Group = Group::GROUP_4;
+    pub const GROUP_GEOMETRY_SENSOR: Group = Group::GROUP_5;
 
     /// Run a tick in the physical simulation.
     pub fn tick(&mut self) {
@@ -333,7 +365,10 @@ impl Physical {
                 &self.collider_set,
                 QueryFilter::default()
                     .exclude_collider(collider_handle)
-                    .exclude_sensors(),
+                    .groups(InteractionGroups::new(
+                        Self::GROUP_ENTITY,
+                        Self::GROUP_ENTITY | Self::GROUP_GEOMETRY,
+                    )),
             );
 
             character.move_shape(
@@ -514,10 +549,7 @@ impl Physical {
         shape: Vector3,
         parent: Option<RigidBodyHandle>,
     ) -> ColliderHandle {
-        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z)
-            //.active_events(ActiveEvents::COLLISION_EVENTS)
-            //.active_collision_types(ActiveCollisionTypes::all())
-            .build();
+        let collider = ColliderBuilder::cuboid(shape.x, shape.y, shape.z).build();
 
         if let Some(parent) = parent {
             self.collider_set
@@ -555,7 +587,9 @@ impl Physical {
                 ]);
             }
 
-            let collider = ColliderBuilder::trimesh(list_vertex, list_index)?;
+            let collider = ColliderBuilder::trimesh(list_vertex, list_index)?.collision_groups(
+                InteractionGroups::new(Self::GROUP_GEOMETRY, Self::GROUP_ENTITY),
+            );
 
             if let Some(parent) = parent {
                 self.collider_set
@@ -600,6 +634,30 @@ impl Physical {
             handle.set_translation_wrt_parent(vector![point.x, point.y, point.z]);
         } else {
             handle.set_translation(vector![point.x, point.y, point.z]);
+        }
+
+        Ok(())
+    }
+
+    pub fn set_collider_angle(
+        &mut self,
+        handle: ColliderHandle,
+        angle: Vector3,
+    ) -> anyhow::Result<()> {
+        let (v, a) = Vector4::from_euler(
+            angle.y.to_radians(),
+            angle.x.to_radians(),
+            angle.z.to_radians(),
+        )
+        .to_axis_angle();
+        let angle = v * a;
+
+        let handle = self.get_collider_mutable(handle)?;
+
+        if handle.parent().is_some() {
+            handle.set_rotation_wrt_parent(AngVector::new(angle.x, angle.y, angle.z));
+        } else {
+            handle.set_rotation(Rotation::new(vector![angle.x, angle.y, angle.z]));
         }
 
         Ok(())

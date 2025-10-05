@@ -56,6 +56,7 @@ use std::fmt::Display;
 
 #[derive(Serialize, Deserialize)]
 pub struct User {
+    pub developer: bool,
     pub tutorial: bool,
     pub video_glyph: GlyphKind,
     pub video_locale: LocaleKind,
@@ -101,6 +102,7 @@ impl Default for User {
             data
         } else {
             Self {
+                developer: true,
                 tutorial: true,
                 video_glyph: GlyphKind::PlayStation,
                 video_locale: LocaleKind::English,

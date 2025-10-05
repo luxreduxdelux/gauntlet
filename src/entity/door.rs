@@ -50,14 +50,14 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
-use crate::physical::Physical;
+use crate::physical::*;
 use crate::scene::View;
 use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
-use rapier3d::prelude::QueryFilter;
+use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -68,6 +68,10 @@ pub struct Door {
     point: Vector3,
     angle: Vector3,
     #[serde(skip)]
+    presence: Presence,
+    #[serde(skip)]
+    solid: ColliderHandle,
+    #[serde(skip)]
     scale: f32,
     #[serde(skip)]
     view: usize,
@@ -76,7 +80,7 @@ pub struct Door {
 }
 
 impl Door {
-    const CUBOID_SCALE: Vector3 = Vector3::new(1.2, 1.2, 0.2);
+    const CUBOID_SCALE: Vector3 = Vector3::new(0.6, 1.2, 0.2);
 }
 
 #[typetag::serde]
@@ -94,6 +98,31 @@ impl Entity for Door {
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        let direction = Direction::new_from_angle(&self.angle);
+
+        self.presence = Presence::new_rigid_cuboid_fixed(
+            &mut world.scene.physical,
+            self.point - direction.z * 0.6,
+            Vector3::zero(),
+            Self::CUBOID_SCALE,
+            &self.info,
+        )?;
+
+        self.solid = self.presence.attach_cuboid(
+            &mut world.scene.physical,
+            direction.z * 1.2,
+            Self::CUBOID_SCALE,
+        )?;
+
+        world
+            .scene
+            .physical
+            .set_collider_angle(self.presence.collider, self.angle);
+        world
+            .scene
+            .physical
+            .set_collider_angle(self.solid, self.angle);
+
         world.scene.set_model(context, "data/video/door_a.glb")?;
         world.scene.set_model(context, "data/video/door_b.glb")?;
 
@@ -109,7 +138,6 @@ impl Entity for Door {
         world: &mut World,
     ) -> anyhow::Result<()> {
         let direction = Direction::new_from_angle(&self.angle);
-
         let point_a = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.00;
         let point_b = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.35;
 
@@ -144,7 +172,7 @@ impl Entity for Door {
         if app.user.debug_draw_entity {
             draw.draw_cube_v(
                 self.point,
-                Self::CUBOID_SCALE * 2.0 + Vector3::new(0.0, 0.0, 2.0),
+                (Self::CUBOID_SCALE + Vector3::new(0.0, 0.0, 2.0)) * 0.5,
                 Color::new(255, 0, 0, 33),
             );
         }
@@ -162,20 +190,36 @@ impl Entity for Door {
             self.point,
             self.angle,
             Self::CUBOID_SCALE + Vector3::new(0.0, 0.0, 2.0),
-            world.scene.room_rigid,
-            QueryFilter::default(),
+            Some(self.presence.rigid),
+            QueryFilter::default().groups(InteractionGroups::new(
+                Physical::GROUP_ENTITY,
+                Physical::GROUP_ENTITY,
+            )),
         );
 
         if cast.is_some() {
-            self.scale += World::TIME_STEP * 2.0;
+            self.scale += World::TIME_STEP * 3.0;
         } else {
-            self.scale -= World::TIME_STEP * 2.0;
+            self.scale -= World::TIME_STEP * 3.0;
         }
 
         self.scale = self.scale.clamp(0.0, 1.0);
 
         let view = &mut world.scene.view_list[self.view];
         view.visible = self.scale > 0.0;
+
+        let direction = Direction::new_from_angle(&self.angle);
+        let point_a = direction.z * ease_in_out_cubic(self.scale) * 1.00 * -1.0;
+        let point_b = direction.z * ease_in_out_cubic(self.scale) * 1.00 + direction.z * 1.2;
+
+        world
+            .scene
+            .physical
+            .set_collider_point(self.presence.collider, point_a)?;
+        world
+            .scene
+            .physical
+            .set_collider_point(self.solid, point_b)?;
 
         Ok(())
     }

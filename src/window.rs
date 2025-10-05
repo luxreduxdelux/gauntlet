@@ -1391,7 +1391,9 @@ impl Layout {
                 draw.enable_cursor();
             }
 
-            app.window.logger.draw(&mut *app_ref, context, draw)?;
+            if app.user.developer {
+                app.window.logger.draw(&mut *app_ref, context, draw)?;
+            }
         }
 
         Ok(())
