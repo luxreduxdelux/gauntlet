@@ -84,6 +84,7 @@ impl Presence {
         physical.set_rigid_angle(rigid, angle)?;
         physical.set_rigid_data(rigid, info.index as u128)?;
         let collider = physical.new_cuboid(scale, Some(rigid));
+        physical.set_collider_group(collider, Physical::GROUP_ENTITY)?;
 
         Ok(Self { rigid, collider })
     }

@@ -129,6 +129,8 @@ impl<'a> App<'a> {
 
                 let mut draw = context.handle.begin_drawing(&context.thread);
 
+                draw.clear_background(Color::BLACK);
+
                 let app = &mut app as *mut Self;
 
                 if let Some(world) = &mut (*app).world {
@@ -143,11 +145,13 @@ impl<'a> App<'a> {
     }
 
     /// Initialize the app proper after context is ready.
-    pub fn initialize(&mut self, context: &'a mut Context) -> anyhow::Result<()> {
-        let state = { self as *const Self };
+    pub fn initialize(&mut self, context: &mut Context) -> anyhow::Result<()> {
+        let app = { self as *const Self };
+        let ctx = { context as *mut Context };
 
         self.layout = Some(Layout::Main);
-        self.window.initialize(unsafe { &*state }, context)?;
+        self.window
+            .initialize(unsafe { &*app }, unsafe { &mut *ctx })?;
 
         Ok(())
     }

@@ -52,6 +52,7 @@ use crate::app::*;
 use crate::entity::implementation::*;
 use crate::entity::player::*;
 use crate::physical::*;
+use crate::scene::Room;
 use crate::utility::*;
 use crate::world::*;
 
@@ -83,8 +84,8 @@ impl EnemyState {
                     && let Some(player) = world.entity_find(index)
                     && let Some(other) = player.as_any().downcast_ref::<Player>()
                 {
-                    let enemy_room = world.scene.room_active_index(enemy.point);
-                    let other_room = world.scene.room_active_index(other.point);
+                    let enemy_room = Room::active_index(&world.scene, enemy.point);
+                    let other_room = Room::active_index(&world.scene, other.point);
 
                     if let Some(e_room) = enemy_room
                         && let Some(o_room) = other_room

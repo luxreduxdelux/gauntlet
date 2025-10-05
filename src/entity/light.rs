@@ -50,6 +50,7 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
+use crate::scene::*;
 use crate::utility::*;
 use crate::window::Window;
 use crate::world::*;
@@ -192,6 +193,8 @@ pub struct Light {
     #[serde(skip)]
     range: f32,
     #[serde(skip)]
+    attenuation: f32,
+    #[serde(skip)]
     frame: f32,
     #[serde(skip)]
     focus: bool,
@@ -217,15 +220,18 @@ impl Entity for Light {
         world: &mut World,
     ) -> anyhow::Result<()> {
         self.active = true;
-        self.power = 4.00;
-        self.range = 0.25;
+        self.power = 8.00;
+        self.range = 4.00;
+        self.attenuation = 0.25;
 
-        self.handle = Some(world.scene.light_add(
+        self.handle = Some(crate::scene::Light::new(
+            &mut world.scene,
             self.point,
             Vector3::zero(),
             self.color,
             self.power,
             self.range,
+            self.attenuation,
         )?);
 
         Ok(())
@@ -233,21 +239,24 @@ impl Entity for Light {
 
     fn draw_3d(
         &mut self,
-        _app: &mut App,
+        app: &mut App,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
         if let Some(handle) = &mut self.handle {
-            let active = world.scene.room_active(self.point);
+            let active = Room::active(&world.scene, self.point);
 
             if (active && !self.active) || (!active && self.active) {
+                app.window.logger.print_warning(&format!("Light {} toggle {}", self.info.index, self.active));
+
                 self.active = !self.active;
-                println!("toggle {} -> {}", self.info.index, self.active);
-                world.scene.light_set_active(*handle, self.active)?;
+                crate::scene::Light::set_active(&mut world.scene, *handle, self.active)?;
             }
         }
 
-        draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
+        if app.user.debug_light_edit {
+            draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
+        }
 
         Ok(())
     }
@@ -259,6 +268,10 @@ impl Entity for Light {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        if !app.user.debug_light_edit {
+            return Ok(());
+        }
+
         let focus = self.focus;
 
         if self.focus {
@@ -271,8 +284,9 @@ impl Entity for Light {
                 app.window.slider(draw, "Color (R)", &mut r, (0.0, 255.0), 1.0)?;
                 app.window.slider(draw, "Color (G)", &mut g, (0.0, 255.0), 1.0)?;
                 app.window.slider(draw, "Color (B)", &mut b, (0.0, 255.0), 1.0)?;
-                app.window.slider(draw, "Power", &mut self.power, (0.0, 4.0), 0.1)?;
-                app.window.slider(draw, "Range", &mut self.range, (0.0, 4.0), 0.1)?;
+                app.window.slider(draw, "Power", &mut self.power, (0.0, 16.0), 0.1)?;
+                app.window.slider(draw, "Range", &mut self.range, (0.0, 16.0), 0.1)?;
+                app.window.slider(draw, "Attenuation", &mut self.attenuation, (0.0, 0.99), 0.01)?;
                 app.window.switch(draw, "Kind", &mut self.kind, &[
                     LightKind::Normal,
                     LightKind::FlickerA,
@@ -288,9 +302,10 @@ impl Entity for Light {
                     LightKind::PulseE,
                 ])?;
 
-                world.scene.light_set_color(*handle, Color::new(r as u8, g as u8, b as u8, 255))?;
-                world.scene.light_set_power(*handle, self.power)?;
-                world.scene.light_set_range(*handle, self.range)?;
+                crate::scene::Light::set_color(&mut world.scene, *handle, Color::new(r as u8, g as u8, b as u8, 255))?;
+                crate::scene::Light::set_power(&mut world.scene, *handle, self.power)?;
+                crate::scene::Light::set_range(&mut world.scene, *handle, self.range)?;
+                crate::scene::Light::set_attenuation(&mut world.scene, *handle, self.attenuation)?;
 
                 let x_a = draw.is_key_pressed(KeyboardKey::KEY_W) || draw.is_key_pressed_repeat(KeyboardKey::KEY_W);
                 let x_b = draw.is_key_pressed(KeyboardKey::KEY_S) || draw.is_key_pressed_repeat(KeyboardKey::KEY_S);
@@ -306,7 +321,7 @@ impl Entity for Light {
                 point.z += if z_a { 1.0 } else if z_b { -1.0 } else { 0.0 };
 
                 self.point = point;
-                world.scene.light_set_point(*handle, point)?;
+                crate::scene::Light::set_point(&mut world.scene, *handle, point)?;
 
                 if draw.is_key_pressed(KeyboardKey::KEY_Q) {
                     self.focus = false;
@@ -315,27 +330,30 @@ impl Entity for Light {
                 };
                 Ok(())
             })?;
+        } else {
+            let ray = Ray::new(
+                world.scene.camera_3d.position,
+                world.scene.camera_3d.target - world.scene.camera_3d.position,
+            );
+
+            let bound = BoundingBox::new(
+                self.point + Vector3::one() * 0.25 * -1.0,
+                self.point + Vector3::one() * 0.25,
+            );
+
+            let collision = bound.get_ray_collision_box(ray);
+
+            if collision.hit && collision.distance <= 8.0 {
+                if draw.is_key_pressed(KeyboardKey::KEY_Q) {
+                    self.focus = true;
+                    app.window.set_device(crate::window::Device::Mouse { lock: true });
+                    // TO-DO make this happen automatically on set_device
+                    draw.enable_cursor();
+                }
+
+                draw.draw_text("[Q] Edit Light", 8, 8, 32, Color::WHITE);
+            }    
         }
-
-        let ray = Ray::new(
-            world.scene.camera_3d.position,
-            world.scene.camera_3d.target - world.scene.camera_3d.position,
-        );
-
-        let bound = BoundingBox::new(
-            self.point + Vector3::one() * 0.25 * -1.0,
-            self.point + Vector3::one() * 0.25,
-        );
-
-        let collision = bound.get_ray_collision_box(ray);
-
-        if collision.hit && collision.distance <= 8.0
-            && draw.is_key_pressed(KeyboardKey::KEY_Q) && !focus {
-                self.focus = true;
-                app.window.set_device(crate::window::Device::Mouse { lock: true });
-                // TO-DO make this happen automatically on set_device
-                draw.enable_cursor();
-            }
 
         Ok(())
     }
@@ -361,12 +379,18 @@ impl Entity for Light {
                     let frame_a = animation[frame - 1];
                     let frame_b = animation[frame];
                     let factor = (self.frame - frame as f32) / ((frame + 1) as f32 - frame as f32);
-                    self.power = interpolate(frame_a, frame_b, ease_in_out_cubic(factor)) * 4.0;
 
-                    world.scene.light_set_power(*light, self.power)?;
+                    crate::scene::Light::set_power(
+                        &mut world.scene,
+                        *light,
+                        interpolate(frame_a, frame_b, ease_in_out_cubic(factor)) * self.power,
+                    )?;
                 } else {
-                    self.power = animation[frame] * 4.0;
-                    world.scene.light_set_power(*light, self.power)?;
+                    crate::scene::Light::set_power(
+                        &mut world.scene,
+                        *light,
+                        animation[frame] * self.power,
+                    )?;
                 }
             }
 

@@ -50,37 +50,25 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
-use crate::physical::Physical;
-use crate::scene::View;
-use crate::utility::*;
 use crate::world::*;
 
 //================================================================
 
-use rapier3d::prelude::QueryFilter;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 
 //================================================================
 
 #[derive(Serialize, Deserialize)]
-pub struct Door {
+pub struct Particle {
     point: Vector3,
     angle: Vector3,
-    #[serde(skip)]
-    scale: f32,
-    #[serde(skip)]
-    view: usize,
     #[serde(skip)]
     info: EntityInfo,
 }
 
-impl Door {
-    const CUBOID_SCALE: Vector3 = Vector3::new(1.2, 1.2, 0.2);
-}
-
 #[typetag::serde]
-impl Entity for Door {
+impl Entity for Particle {
     fn get_info(&self) -> &EntityInfo {
         &self.info
     }
@@ -94,88 +82,21 @@ impl Entity for Door {
         context: &mut Context,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        world.scene.set_model(context, "data/video/door_a.glb")?;
-        world.scene.set_model(context, "data/video/door_b.glb")?;
-
-        self.view = View::new(&mut world.scene, self.point, self.angle)?;
+        world
+            .scene
+            .asset
+            .set_texture(context, "data/video/particle.png")?;
 
         Ok(())
     }
 
     fn draw_3d(
         &mut self,
-        app: &mut App,
+        _app: &mut App,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        let direction = Direction::new_from_angle(&self.angle);
-
-        let point_a = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.00;
-        let point_b = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.35;
-
-        let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
-
-        let color = if app.user.debug_draw_entity {
-            Color::new(255, 255, 255, 33)
-        } else {
-            Color::WHITE
-        };
-
-        draw.draw_model_ex(
-            &model_a.model,
-            point_a,
-            direction.y,
-            self.angle.x,
-            Vector3::one(),
-            color,
-        );
-
-        let model_b = world.scene.asset.get_model("data/video/door_b.glb")?;
-
-        draw.draw_model_ex(
-            &model_b.model,
-            point_b,
-            direction.y,
-            self.angle.x,
-            Vector3::one(),
-            color,
-        );
-
-        if app.user.debug_draw_entity {
-            draw.draw_cube_v(
-                self.point,
-                Self::CUBOID_SCALE * 2.0 + Vector3::new(0.0, 0.0, 2.0),
-                Color::new(255, 0, 0, 33),
-            );
-        }
-
-        Ok(())
-    }
-
-    fn tick(
-        &mut self,
-        app: &mut App,
-        _context: &mut Context,
-        world: &mut World,
-    ) -> anyhow::Result<()> {
-        let cast = world.scene.physical.intersect_cuboid(
-            self.point,
-            self.angle,
-            Self::CUBOID_SCALE + Vector3::new(0.0, 0.0, 2.0),
-            world.scene.room_rigid,
-            QueryFilter::default(),
-        );
-
-        if cast.is_some() {
-            self.scale += World::TIME_STEP * 2.0;
-        } else {
-            self.scale -= World::TIME_STEP * 2.0;
-        }
-
-        self.scale = self.scale.clamp(0.0, 1.0);
-
-        let view = &mut world.scene.view_list[self.view];
-        view.visible = self.scale > 0.0;
+        draw.draw_cube_v(self.point, Vector3::one() * 0.1, Color::RED);
 
         Ok(())
     }

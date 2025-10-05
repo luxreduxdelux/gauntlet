@@ -79,6 +79,14 @@ pub struct User {
     pub input_pull: Input,
     pub input_info: Input,
     pub input_mouse_scale: f32,
+    #[serde(skip)]
+    pub debug_draw_physical: bool,
+    #[serde(skip)]
+    pub debug_draw_entity: bool,
+    #[serde(skip)]
+    pub debug_frame_rate: bool,
+    #[serde(skip)]
+    pub debug_light_edit: bool,
 }
 
 impl User {
@@ -116,6 +124,10 @@ impl Default for User {
                 input_pull: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
                 input_info: Input::new_board(KeyboardKey::KEY_TAB),
                 input_mouse_scale: 1.0,
+                debug_draw_physical: false,
+                debug_draw_entity: false,
+                debug_frame_rate: false,
+                debug_light_edit: false,
             }
         }
     }

@@ -110,9 +110,15 @@ impl Entity for Weapon {
             &mut world.scene.physical,
             self.point,
             self.angle,
-            Vector3::new(0.10, 0.25, 0.40),
+            Vector3::new(0.10, 0.25, 0.35),
             &self.info,
         )?;
+
+        let rigid = world
+            .scene
+            .physical
+            .get_rigid_mutable(self.presence.rigid)?;
+        rigid.enable_ccd(true);
 
         if let Some(force) = &mut self.force {
             world
@@ -247,11 +253,11 @@ impl Wield for Weapon {
             let angle = Direction::new_from_angle(&player.angle);
 
             let weapon = Weapon {
-                point: point + angle.x,
+                point: point + angle.x * 2.0,
                 angle: Vector3::default(),
                 ammo: self.ammo,
                 grab: 0.25,
-                force: Some(angle.x * 0.5),
+                force: Some(angle.x * 2.0),
                 presence: Presence::default(),
                 info: EntityInfo::default(),
             };

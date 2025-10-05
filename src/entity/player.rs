@@ -144,6 +144,10 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        if app.user.debug_draw_physical {
+            world.scene.physical.draw();
+        }
+
         if !draw.is_cursor_hidden() {
             return Ok(());
         }
@@ -201,6 +205,10 @@ impl Entity for Player {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
+        if app.user.debug_frame_rate {
+            draw.draw_text(&draw.get_fps().to_string(), 8, 8, 32, Color::WHITE);
+        }
+
         let full = Vector2::new(
             draw.get_render_width() as f32,
             draw.get_render_height() as f32,
@@ -406,12 +414,7 @@ impl PlayerState {
                     }
                 }
 
-                let mut controller = KinematicCharacterController::default();
-                controller.autostep = Some(CharacterAutostep {
-                    max_height: CharacterLength::Relative(0.75),
-                    min_width: CharacterLength::Relative(0.5),
-                    include_dynamic_bodies: true,
-                });
+                let controller = KinematicCharacterController::default();
 
                 movement_walk(
                     &mut world.scene.physical,

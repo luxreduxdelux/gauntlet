@@ -83,9 +83,11 @@ impl<'a> World<'a> {
             let level = Level::new("data/level/tutorial/tutorial.json")?;
 
             for model in &level.level {
-                world
-                    .scene
-                    .room_add(context, &format!("data/level/tutorial/{model}"))?;
+                Room::new(
+                    &mut world.scene,
+                    context,
+                    &format!("data/level/tutorial/{model}"),
+                )?;
             }
 
             world.fuse_level(level);
@@ -119,7 +121,7 @@ impl<'a> World<'a> {
         context: &mut Context,
     ) -> anyhow::Result<()> {
         let world = self as *mut Self;
-        let pause = app.layout.is_some();
+        let pause = app.layout.is_some() || app.window.logger.active;
 
         if !pause {
             let frame_time = context.handle.get_frame_time().min(0.25);

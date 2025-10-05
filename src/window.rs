@@ -48,8 +48,6 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// TO-DO key glyph at bottom of screen.
-
 use crate::app::*;
 use crate::scene::*;
 use crate::user::*;
@@ -64,12 +62,476 @@ use std::fmt::Display;
 
 //================================================================
 
+pub struct Logger {
+    pub active: bool,
+    buffer: String,
+    activity: Vec<String>,
+    suggest: Vec<LoggerSuggest>,
+    history: Vec<LoggerLine>,
+    command: HashMap<String, LoggerCommand>,
+    scroll: f32,
+}
+
+struct LoggerCommand {
+    info: String,
+    call: Box<dyn FnMut(&mut App, &mut Context, Vec<&str>) -> anyhow::Result<()>>,
+}
+
+struct LoggerSuggest {
+    name: String,
+    info: String,
+}
+
+struct LoggerLine {
+    text: String,
+    kind: LoggerKind,
+    time: f32,
+}
+
+enum LoggerKind {
+    History,
+    Command,
+    Warning,
+    Failure,
+}
+
+impl LoggerKind {
+    fn color(&self) -> Color {
+        match self {
+            Self::History => Color::new(127, 127, 127, 255),
+            Self::Command => Color::new(255, 255, 255, 255),
+            Self::Warning => Color::new(255, 127, 0, 255),
+            Self::Failure => Color::new(255, 0, 0, 255),
+        }
+    }
+}
+
+impl Logger {
+    fn history_check(&mut self) {
+        if self.history.len() > 32 {
+            self.history.remove(0);
+        }
+    }
+
+    pub fn print_history(&mut self, text: &str) {
+        let time = unsafe { ffi::GetTime() as f32 };
+
+        self.history.push(LoggerLine {
+            text: format!("({time:.2}) {text}"),
+            kind: LoggerKind::History,
+            time: 4.0,
+        });
+
+        self.history_check();
+    }
+
+    pub fn print_command(&mut self, text: &str) {
+        let time = unsafe { ffi::GetTime() as f32 };
+
+        self.history.push(LoggerLine {
+            text: format!("({time:.2}) {text}"),
+            kind: LoggerKind::Command,
+            time: 4.0,
+        });
+
+        self.history_check();
+    }
+
+    pub fn print_warning(&mut self, text: &str) {
+        let time = unsafe { ffi::GetTime() as f32 };
+
+        self.history.push(LoggerLine {
+            text: format!("({time:.2}) {text}"),
+            kind: LoggerKind::Warning,
+            time: 4.0,
+        });
+
+        self.history_check();
+    }
+
+    pub fn print_failure(&mut self, text: &str) {
+        let time = unsafe { ffi::GetTime() as f32 };
+
+        self.history.push(LoggerLine {
+            text: format!("({time:.2}) {text}"),
+            kind: LoggerKind::Failure,
+            time: 4.0,
+        });
+
+        self.history_check();
+    }
+
+    fn draw(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        draw: &mut RaylibDrawHandle<'_>,
+    ) -> anyhow::Result<()> {
+        if self.active {
+            self.draw_active(app, context, draw)
+        } else {
+            self.draw_hidden(app, context, draw)
+        }
+    }
+
+    fn complete_suggest(&mut self) {
+        if !self.suggest.is_empty() {
+            let mut select = None;
+
+            for (i, entry) in self.suggest.iter().enumerate() {
+                if entry.name.starts_with(&self.buffer) {
+                    select = Some(i);
+                }
+            }
+
+            if let Some(index) = select
+                && let Some(suggest) = self.suggest.get(index + 1)
+            {
+                self.buffer = suggest.name.clone();
+            } else {
+                self.buffer = self.suggest[0].name.clone();
+            }
+        }
+    }
+
+    fn complete_activity(&mut self, direction: i32) {
+        if !self.activity.is_empty() {
+            let mut select = None;
+
+            if !self.buffer.is_empty() {
+                for (i, entry) in self.activity.iter().enumerate() {
+                    if entry.starts_with(&self.buffer) {
+                        select = Some(i);
+                        break;
+                    }
+                }
+            }
+
+            if let Some(index) = select {
+                let index = (index as i32 + direction).rem_euclid(self.activity.len() as i32);
+
+                self.buffer = self.activity[index as usize].clone();
+            } else {
+                self.buffer = self.activity.last().unwrap().clone();
+            }
+        }
+    }
+
+    fn build_suggest(&mut self) {
+        self.suggest.clear();
+
+        if !self.buffer.is_empty() {
+            for (entry, command) in &self.command {
+                if entry.starts_with(&self.buffer) {
+                    self.suggest.push(LoggerSuggest {
+                        name: entry.to_string(),
+                        info: command.info.clone(),
+                    });
+                }
+            }
+        }
+    }
+
+    fn attach_character(&mut self, character: char) {
+        self.buffer.push(character);
+        self.build_suggest();
+    }
+
+    fn detach_character(&mut self) {
+        self.buffer.pop();
+        self.build_suggest();
+    }
+
+    fn wipe_character(&mut self) {
+        self.buffer.clear();
+        self.build_suggest();
+    }
+
+    fn draw_active(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        draw: &mut RaylibDrawHandle<'_>,
+    ) -> anyhow::Result<()> {
+        if let Some(key) = draw.get_key_pressed() {
+            match key {
+                KeyboardKey::KEY_ENTER => {
+                    let text = self.buffer.clone();
+                    self.print_history(&text);
+                    self.activity.push(text);
+                    self.evaluate(app, context)?;
+                    self.wipe_character();
+                }
+                KeyboardKey::KEY_TAB => {
+                    self.complete_suggest();
+                }
+                KeyboardKey::KEY_UP => {
+                    self.complete_activity(1 * -1);
+                }
+                KeyboardKey::KEY_DOWN => {
+                    self.complete_activity(1);
+                }
+                KeyboardKey::KEY_BACKSPACE => {
+                    self.detach_character();
+                }
+                KeyboardKey::KEY_F3 => {
+                    self.active = false;
+                }
+                _ => {}
+            }
+        }
+
+        if let Some(character) = draw.get_char_pressed() {
+            self.attach_character(character);
+        }
+
+        let scale = Vector2::new(
+            draw.get_screen_width() as f32,
+            draw.get_screen_height() as f32 * 0.5,
+        );
+
+        draw.draw_rectangle_rec(
+            Rectangle::new(0.0, 0.0, scale.x, scale.y),
+            Color::new(0, 0, 0, 192),
+        );
+
+        let font = app.window.font_label()?;
+
+        let delta = draw.get_mouse_wheel_move();
+
+        self.scroll = (self.scroll + delta).max(0.0);
+
+        unsafe {
+            ffi::BeginScissorMode(0, 0, scale.x as i32, (scale.y - 40.0) as i32);
+        }
+
+        for (i, line) in self.history.iter().rev().enumerate() {
+            Window::font_draw(
+                draw,
+                font,
+                &line.text,
+                Vector2::new(
+                    8.0,
+                    scale.y - 40.0 - 32.0 * (i + 1) as f32 + 32.0 * self.scroll,
+                ),
+                line.kind.color(),
+            );
+        }
+
+        unsafe {
+            ffi::EndScissorMode();
+        }
+
+        for (i, line) in self.suggest.iter().enumerate() {
+            let point = Vector2::new(0.0, scale.y + 32.0 * i as f32);
+
+            draw.draw_rectangle_rec(
+                Rectangle::new(point.x, point.y, scale.x, 32.0),
+                Color::new(0, 0, 0, 127),
+            );
+
+            Window::font_draw(
+                draw,
+                font,
+                &line.name,
+                point + Vector2::new(8.0, 0.0),
+                Color::WHITE,
+            );
+
+            let measure = Window::font_measure(font, &line.info);
+
+            Window::font_draw(
+                draw,
+                font,
+                &line.info,
+                point + Vector2::new(scale.x - measure.x - 8.0, 0.0),
+                Color::new(192, 192, 192, 255),
+            );
+        }
+
+        Window::font_draw(
+            draw,
+            font,
+            &self.buffer,
+            Vector2::new(8.0, scale.y - 40.0),
+            Color::WHITE,
+        );
+
+        Ok(())
+    }
+
+    fn draw_hidden(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        draw: &mut RaylibDrawHandle<'_>,
+    ) -> anyhow::Result<()> {
+        if draw.is_key_pressed(KeyboardKey::KEY_F3) {
+            self.active = true;
+        }
+
+        let font = app.window.font_label()?;
+
+        for (i, line) in self.history.iter_mut().rev().enumerate() {
+            if i >= 4 || line.time == 0.0 {
+                break;
+            }
+
+            line.time = (line.time - context.handle.get_frame_time()).max(0.0);
+
+            Window::font_draw(
+                draw,
+                font,
+                &line.text,
+                Vector2::new(8.0, 8.0 + 32.0 * i as f32),
+                line.kind.color(),
+            );
+        }
+
+        Ok(())
+    }
+
+    fn evaluate(&mut self, app: &mut App, context: &mut Context) -> anyhow::Result<()> {
+        if !self.buffer.is_empty() {
+            let split: Vec<&str> = self.buffer.split(" ").collect();
+
+            if let Some(entry) = split.first() {
+                if let Some(command) = self.command.get_mut(*entry) {
+                    (command.call)(app, context, split)?;
+                } else {
+                    self.print_failure(&format!("Unknown command \"{entry}\"."));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn register_command<
+        F: FnMut(&mut App, &mut Context, Vec<&str>) -> anyhow::Result<()> + 'static,
+    >(
+        table: &mut HashMap<String, LoggerCommand>,
+        entry: &str,
+        info: &str,
+        call: F,
+    ) {
+        table.insert(
+            entry.to_string(),
+            LoggerCommand {
+                info: info.to_string(),
+                call: Box::new(call),
+            },
+        );
+    }
+
+    //================================================================
+
+    fn find(app: &mut App, _: &mut Context, token: Vec<&str>) -> anyhow::Result<()> {
+        if let Some(token) = token.get(1) {
+            let mut result = Vec::with_capacity(app.window.logger.command.len());
+
+            for (entry, command) in app.window.logger.command.iter() {
+                if entry.contains(token) {
+                    result.push(format!("{entry}: {}", command.info));
+                }
+            }
+
+            result
+                .iter()
+                .for_each(|x| app.window.logger.print_command(&x));
+        } else {
+            app.window.logger.print_failure("Usage: find {sub-string}");
+        }
+
+        Ok(())
+    }
+
+    fn clear(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.window.logger.history.clear();
+
+        Ok(())
+    }
+
+    fn close(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.close = true;
+
+        Ok(())
+    }
+
+    fn reset(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        *app = App::default();
+        app.initialize(context)?;
+
+        Ok(())
+    }
+
+    fn reset_world(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.new_world(context)?;
+        app.window.logger.active = false;
+
+        Ok(())
+    }
+
+    fn debug_draw_physical(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.user.debug_draw_physical = !app.user.debug_draw_physical;
+
+        Ok(())
+    }
+
+    fn debug_draw_entity(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.user.debug_draw_entity = !app.user.debug_draw_entity;
+
+        Ok(())
+    }
+
+    fn debug_frame_rate(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.user.debug_frame_rate = !app.user.debug_frame_rate;
+
+        Ok(())
+    }
+
+    fn debug_light_edit(app: &mut App, _: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+        app.user.debug_light_edit = !app.user.debug_light_edit;
+
+        Ok(())
+    }
+}
+
+impl Default for Logger {
+    #[rustfmt::skip]
+    fn default() -> Self {
+        let mut command = HashMap::default();
+        Self::register_command(&mut command, "find",                "Find a command by sub-string.",       Self::find);
+        Self::register_command(&mut command, "clear",               "Clear logger history.",               Self::clear);
+        Self::register_command(&mut command, "close",               "Close Gauntlet Complex.",             Self::close);
+        Self::register_command(&mut command, "reset",               "Reset the app state.",                Self::reset);
+        Self::register_command(&mut command, "reset_world",         "Reset the world state.",              Self::reset_world);
+        Self::register_command(&mut command, "debug_draw_physical", "Draw the world physical simulation.", Self::debug_draw_physical);
+        Self::register_command(&mut command, "debug_draw_entity",   "Draw point entity.",                  Self::debug_draw_entity);
+        Self::register_command(&mut command, "debug_frame_rate",    "Draw the current frame rate.",        Self::debug_frame_rate);
+        Self::register_command(&mut command, "debug_light_edit",    "Draw the light editor.",              Self::debug_light_edit);
+
+        Self {
+            active: false,
+            buffer: Default::default(),
+            activity: Default::default(),
+            suggest: Default::default(),
+            history: Default::default(),
+            command,
+            scroll: Default::default(),
+        }
+    }
+}
+
+//================================================================
+
 #[derive(Default)]
 pub struct Window<'a> {
     widget: HashMap<usize, Widget>,
     scene: Scene<'a>,
     point: Vector2,
     index: usize,
+    pub logger: Logger,
     device: Device,
     focus: Option<usize>,
     view: Option<(Rectangle, f32)>,
@@ -118,7 +580,7 @@ impl<'a> Window<'a> {
 
         self.scene.initialize(app, context)?;
 
-        self.scene.room_add(context, "data/video/menu.glb")?;
+        Room::new(&mut self.scene, context, "data/video/menu.glb")?;
 
         self.scene.link()?;
 
@@ -156,7 +618,7 @@ impl<'a> Window<'a> {
     }
 
     pub fn font_draw(
-        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        draw: &mut RaylibDrawHandle<'_>,
         font: &Font,
         text: &str,
         point: Vector2,
@@ -890,8 +1352,8 @@ impl Layout {
         let pause = app.layout.is_some();
 
         unsafe {
-            let state_reference = app as *mut App;
-            let ctx_reference = context as *mut Context;
+            let app_ref = app as *mut App;
+            let ctx_ref = context as *mut Context;
 
             if pause {
                 app.window.scene.camera_3d = Camera3D::perspective(
@@ -901,7 +1363,7 @@ impl Layout {
                     90.0,
                 );
 
-                app.window.scene.update(&*state_reference, context)?;
+                app.window.scene.update(&*app_ref, context)?;
 
                 app.window.scene.draw_3d(&mut *context, draw, |draw| {
                     //
@@ -909,8 +1371,8 @@ impl Layout {
                 })?;
 
                 app.window.scene.draw_2d(&mut *context, draw, |draw| {
-                    let app = &mut *state_reference;
-                    let context = &mut *ctx_reference;
+                    let app = &mut *app_ref;
+                    let context = &mut *ctx_ref;
 
                     if let Some(layout) = &app.layout {
                         match layout {
@@ -921,32 +1383,31 @@ impl Layout {
                             _ => Ok(()),
                         }?;
                     }
+
                     Ok(())
                 })?;
             } else if app.window.device.escape(draw) {
                 Self::set_layout(app, draw, Some(Layout::Main));
                 draw.enable_cursor();
             }
+
+            app.window.logger.draw(&mut *app_ref, context, draw)?;
         }
 
         Ok(())
     }
 
-    fn main(app: &mut App, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+    fn main(
+        app: &mut App,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+    ) -> anyhow::Result<()> {
         if app.world.is_some() {
             Self::layout_back(app, draw, None)?;
         }
 
-        let mut draw = draw.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
-
         let mut layout = None;
 
-        Window::draw(app, &mut draw, |app, draw| {
+        Window::draw(app, draw, |app, draw| {
             app.window.point = Self::INITIAL_POINT;
 
             if app.window.button(draw, "begin")?.accept() {
@@ -963,7 +1424,7 @@ impl Layout {
         })?;
 
         if let Some(layout) = layout {
-            Self::set_layout(app, &mut draw, Some(layout));
+            Self::set_layout(app, draw, Some(layout));
         }
 
         Ok(())
@@ -971,7 +1432,7 @@ impl Layout {
 
     fn layout_back(
         app: &mut App,
-        draw: &mut RaylibDrawHandle<'_>,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         layout: Option<Self>,
     ) -> anyhow::Result<()> {
         if let Some(response) = app.window.device.response(draw)
@@ -997,25 +1458,18 @@ impl Layout {
     fn begin(
         _app: &mut App,
         _context: &mut Context,
-        _draw: &mut RaylibDrawHandle<'_>,
+        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
     #[rustfmt::skip]
-    fn setup(app: &mut App, draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+    fn setup(app: &mut App, draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>) -> anyhow::Result<()> {
         Self::layout_back(app, draw, Some(Layout::Main))?;
-
-        let mut draw = draw.begin_mode2D(Camera2D {
-            offset: Vector2::zero(),
-            target: Vector2::zero(),
-            rotation: 0.0,
-            zoom: 1.0,
-        });
 
         let mut layout = None;
 
-        Window::draw(app, &mut draw, |app, draw| {
+        Window::draw(app, draw, |app, draw| {
             app.window.point = Self::INITIAL_POINT;
 
             let y = draw.get_screen_height() as f32 - 200.0;
@@ -1114,13 +1568,16 @@ impl Layout {
         })?;
 
         if let Some(layout) = layout {
-            Self::set_layout(app, &mut draw, Some(layout));
+            Self::set_layout(app, draw, Some(layout));
         }
 
         Ok(())
     }
 
-    fn close(_app: &mut App, _draw: &mut RaylibDrawHandle<'_>) -> anyhow::Result<()> {
+    fn close(
+        _app: &mut App,
+        _draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 }

@@ -61,25 +61,6 @@ use crate::utility::*;
 
 //================================================================
 
-#[derive(Default, Copy, Clone)]
-pub enum LightMode {
-    #[default]
-    Point = 0,
-    Directional = 1,
-}
-
-#[derive(Default)]
-struct Light {
-    active: i32,
-    mode: i32,
-    point: i32,
-    focus: i32,
-    color: i32,
-    power: i32,
-    range: i32,
-}
-
-// TO-DO implement light system
 // TO-DO implement particle system
 // TO-DO: been told by raylib contributor to use another audio solution for
 // spacialization and better audio management, research another library.
@@ -90,230 +71,19 @@ pub struct Scene<'a> {
     texture: Option<RenderTexture2D>,
     sound_list: Vec<Noise>,
     music_list: Vec<Noise>,
-    pub light_list: Vec<Light>,
-    pub room_list: Vec<Room>,
+    light_list: Vec<Light>,
+    room_list: Vec<Room>,
+    // TO-DO make setter for this.
     pub view_list: Vec<View>,
-    pub path_list: Vec<Path>,
-    pub path_hash: HashMap<(i32, i32, i32), Vec<usize>>,
+    particle_list: Vec<Particle>,
+    path_list: Vec<Path>,
+    path_hash: HashMap<(i32, i32, i32), Vec<usize>>,
     pub physical: Physical,
     pub room_rigid: Option<RigidBodyHandle>,
     pub pause: bool,
 }
 
 impl<'a> Scene<'a> {
-    pub fn light_add(
-        &mut self,
-        point: Vector3,
-        focus: Vector3,
-        color: Color,
-        power: f32,
-        range: f32,
-    ) -> anyhow::Result<usize> {
-        let shader = self.asset.get_shader("light")?;
-        let mut light = Light::default();
-        let index = self.light_list.len();
-
-        light.active = shader.get_shader_location(&format!("light_list[{}].active", index));
-        light.mode = shader.get_shader_location(&format!("light_list[{}].mode", index));
-        light.point = shader.get_shader_location(&format!("light_list[{}].point", index));
-        light.focus = shader.get_shader_location(&format!("light_list[{}].focus", index));
-        light.color = shader.get_shader_location(&format!("light_list[{}].color", index));
-        light.power = shader.get_shader_location(&format!("light_list[{}].power", index));
-        light.range = shader.get_shader_location(&format!("light_list[{}].range", index));
-
-        self.light_list.push(light);
-
-        self.light_set_active(index, true)?;
-        self.light_set_mode(index, LightMode::Point)?;
-        self.light_set_point(index, point)?;
-        self.light_set_focus(index, focus)?;
-        self.light_set_color(index, color)?;
-        self.light_set_power(index, power)?;
-        self.light_set_range(index, range)?;
-
-        Ok(index)
-    }
-
-    pub fn light_set_active(&mut self, index: usize, active: bool) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.active, if active { 1 } else { 0 });
-
-        Ok(())
-    }
-
-    pub fn light_set_mode(&mut self, index: usize, mode: LightMode) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.mode, mode as i32);
-
-        Ok(())
-    }
-
-    pub fn light_set_point(&mut self, index: usize, point: Vector3) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.point, point);
-
-        Ok(())
-    }
-
-    pub fn light_set_focus(&mut self, index: usize, focus: Vector3) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.focus, focus);
-
-        Ok(())
-    }
-
-    pub fn light_set_color(&mut self, index: usize, color: Color) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-
-        let color = Vector4::new(
-            (color.r as f32 / 255.0) * 0.1,
-            (color.g as f32 / 255.0) * 0.1,
-            (color.b as f32 / 255.0) * 0.1,
-            (color.a as f32 / 255.0) * 0.1,
-        );
-
-        shader.set_shader_value(handle.color, color);
-
-        Ok(())
-    }
-
-    pub fn light_set_power(&mut self, index: usize, power: f32) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.power, power);
-
-        Ok(())
-    }
-    pub fn light_set_range(&mut self, index: usize, range: f32) -> anyhow::Result<()> {
-        let handle = &self.light_list[index];
-        let shader = self.asset.get_shader("light")?;
-        shader.set_shader_value(handle.range, range);
-
-        Ok(())
-    }
-
-    pub fn path_add(&mut self, point: Vector3) {
-        self.path_list.push(Path { point });
-        let point = (
-            snap_to_grid(point.x, 16.0) as i32,
-            snap_to_grid(point.y, 16.0) as i32,
-            snap_to_grid(point.z, 16.0) as i32,
-        );
-        let entry = self.path_hash.entry(point).or_default();
-        entry.push(self.path_list.len() - 1);
-    }
-
-    fn path_closest(&self, point: Vector3, path_list: &'a [Path]) -> Option<&'a Path> {
-        let mut path_away = f32::MAX;
-        let mut path_pick = None;
-
-        for path in path_list {
-            let away = point.distance_to(path.point);
-
-            if away <= path_away {
-                path_away = away;
-                path_pick = Some(path)
-            }
-        }
-
-        path_pick
-    }
-
-    //pub fn path_calculate(&mut self, point_a: Vector3, point_b: Vector3) -> Vec<Path> {
-    //    let path_o = Vec::with_capacity(self.path_list.len());
-    //    let path_c = Vec::with_capacity(self.path_list.len());
-    //}
-
-    pub fn room_active(&self, point: Vector3) -> bool {
-        if let Some((_, collider)) = self.physical.intersect_point(
-            point,
-            None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
-        ) {
-            self.room_list[collider.user_data as usize].visible
-        } else {
-            false
-        }
-    }
-
-    pub fn room_active_box(&self, point: Vector3, angle: Vector3, shape: Vector3) -> bool {
-        if let Some((_, collider)) = self.physical.intersect_cuboid(
-            point,
-            angle,
-            shape,
-            None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
-        ) {
-            self.room_list[collider.user_data as usize].visible
-        } else {
-            false
-        }
-    }
-
-    pub fn room_active_index(&self, point: Vector3) -> Option<usize> {
-        if let Some((_, collider)) = self.physical.intersect_point(
-            point,
-            None,
-            QueryFilter::default()
-                .exclude_solids()
-                .groups(Physical::GROUP_GEOMETRY),
-        ) {
-            Some(collider.user_data as usize)
-        } else {
-            None
-        }
-    }
-
-    pub fn update_resolution(&mut self, context: &mut Context, scale: f32) -> anyhow::Result<()> {
-        let size = Vector2::new(
-            context.handle.get_screen_width() as f32 * scale,
-            context.handle.get_screen_height() as f32 * scale,
-        );
-
-        self.texture = Some(context.handle.load_render_texture(
-            &context.thread,
-            size.x as u32,
-            size.y as u32,
-        )?);
-
-        Ok(())
-    }
-
-    pub fn link(&mut self) -> anyhow::Result<()> {
-        for (i_v, view) in self.view_list.iter_mut().enumerate() {
-            for (i_r, room) in self.room_list.iter_mut().enumerate() {
-                let direction = Direction::new_from_angle(&view.angle);
-                let direction_f = raylib::math::Ray::new(view.point, direction.x);
-                let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
-
-                let model = self.asset.get_model(&room.path)?;
-                let bound = model.model.get_model_bounding_box();
-
-                let hit_f = bound.get_ray_collision_box(direction_f);
-                let hit_b = bound.get_ray_collision_box(direction_b);
-
-                let hit_f = hit_f.hit && hit_f.distance <= 1.0;
-                let hit_b = hit_b.hit && hit_b.distance <= 1.0;
-
-                if hit_f || hit_b {
-                    room.view.push(i_v);
-                    view.room.push(i_r);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
     pub fn initialize(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
         self.texture = Some(context.handle.load_render_texture(
             &context.thread,
@@ -340,11 +110,37 @@ impl<'a> Scene<'a> {
 
         light.set_shader_value(
             light.get_shader_location("ambient"),
-            Vector4::new(0.25, 0.25, 0.25, 1.0),
+            Vector4::new(0.5, 0.5, 0.5, 1.0),
         );
 
         self.camera_3d =
             Camera3D::perspective(Vector3::zero(), Vector3::zero(), Vector3::up(), 90.0);
+
+        Ok(())
+    }
+
+    pub fn link(&mut self) -> anyhow::Result<()> {
+        for (i_v, view) in self.view_list.iter_mut().enumerate() {
+            for (i_r, room) in self.room_list.iter_mut().enumerate() {
+                let direction = Direction::new_from_angle(&view.angle);
+                let direction_f = raylib::math::Ray::new(view.point, direction.x);
+                let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
+
+                let model = self.asset.get_model(&room.path)?;
+                let bound = model.model.get_model_bounding_box();
+
+                let hit_f = bound.get_ray_collision_box(direction_f);
+                let hit_b = bound.get_ray_collision_box(direction_b);
+
+                let hit_f = hit_f.hit && hit_f.distance <= 1.0;
+                let hit_b = hit_b.hit && hit_b.distance <= 1.0;
+
+                if hit_f || hit_b {
+                    room.view.push(i_v);
+                    view.room.push(i_r);
+                }
+            }
+        }
 
         Ok(())
     }
@@ -377,127 +173,6 @@ impl<'a> Scene<'a> {
                 music.resume_stream();
             }
         }
-
-        Ok(())
-    }
-
-    // TO-DO move room_* into Room, same with other stuff
-    pub fn room_add(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
-        if self.room_rigid.is_none() {
-            self.room_rigid = Some(self.physical.new_rigid_fixed());
-        }
-
-        let shader = self.asset.get_shader("light")? as *const Shader;
-        let model = self.asset.set_model(context, path)?;
-
-        model.model.materials_mut()[1].shader = unsafe { **shader };
-
-        let bound = model.model.get_model_bounding_box();
-
-        let collider = self
-            .physical
-            .new_cuboid((bound.max - bound.min) * 0.5, self.room_rigid);
-        self.physical
-            .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
-        self.physical.set_collider_sensor(collider, true)?;
-        self.physical
-            .set_collider_data(collider, self.room_list.len() as u128)?;
-        self.physical
-            .set_collider_group(collider, Physical::GROUP_GEOMETRY)?;
-
-        self.physical.new_model(&model.model, self.room_rigid)?;
-
-        self.room_list.push(Room {
-            point: (bound.min + bound.max) * 0.5,
-            angle: Vector3::zero(),
-            scale: (bound.max - bound.min) * 0.5,
-            bound,
-            path: path.to_string(),
-            view: Vec::default(),
-            visible: false,
-            visit: false,
-        });
-
-        Ok(())
-    }
-
-    pub fn view_add(&mut self, point: Vector3, angle: Vector3) -> anyhow::Result<usize> {
-        let mut view = View::default();
-        view.point = point;
-        view.angle = angle;
-        view.visible = false;
-
-        let index = self.view_list.len();
-
-        self.view_list.push(view);
-
-        Ok(index)
-    }
-
-    pub fn sound_play(
-        &mut self,
-        app: &App,
-        path: &str,
-        point: Option<Vector3>,
-    ) -> anyhow::Result<()> {
-        let sound = self.asset.get_sound(path)?;
-
-        if sound.sound.is_playing() {
-            for (i, alias) in sound.alias.iter().enumerate() {
-                if !alias.is_playing() {
-                    if let Some(point) = point {
-                        let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
-                        alias.set_volume(distance * app.user.audio_sound);
-                        alias.set_pan(pan);
-                    } else {
-                        alias.set_volume(app.user.audio_sound);
-                    }
-
-                    alias.play();
-
-                    self.sound_list.push(Noise {
-                        point,
-                        range: 8.0,
-                        alias: Some(i),
-                        path: path.to_string(),
-                    });
-
-                    return Ok(());
-                }
-            }
-        }
-
-        // TO-DO cull sound if not even audible?
-        if let Some(point) = point {
-            let (distance, pan) = calculate_distance_pan(self.camera_3d, point, 8.0);
-            sound.sound.set_volume(distance * app.user.audio_sound);
-            sound.sound.set_pan(pan);
-        } else {
-            sound.sound.set_volume(app.user.audio_sound);
-        }
-
-        sound.sound.play();
-
-        self.sound_list.push(Noise {
-            point,
-            range: 8.0,
-            alias: None,
-            path: path.to_string(),
-        });
-
-        Ok(())
-    }
-
-    pub fn music_play(&mut self, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
-        let music = self.asset.get_music(path)?;
-        music.play_stream();
-
-        self.music_list.push(Noise {
-            point,
-            range: 8.0,
-            alias: None,
-            path: path.to_string(),
-        });
 
         Ok(())
     }
@@ -561,6 +236,32 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
+    pub fn set_model(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        let shader = self.asset.get_shader("light")? as *const Shader;
+        let model = self.asset.set_model(context, path)?;
+
+        for material in model.model.materials_mut() {
+            material.shader = unsafe { **shader };
+        }
+
+        Ok(())
+    }
+
+    pub fn update_resolution(&mut self, context: &mut Context, scale: f32) -> anyhow::Result<()> {
+        let size = Vector2::new(
+            context.handle.get_screen_width() as f32 * scale,
+            context.handle.get_screen_height() as f32 * scale,
+        );
+
+        self.texture = Some(context.handle.load_render_texture(
+            &context.thread,
+            size.x as u32,
+            size.y as u32,
+        )?);
+
+        Ok(())
+    }
+
     pub fn draw_3d<
         F: FnMut(
             &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
@@ -600,7 +301,7 @@ impl<'a> Scene<'a> {
                     let model = self.asset.get_model(&room.path).unwrap();
                     draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
                 }
-            } else if let Some(room) = (*scn).room_active_index(self.camera_3d.position) {
+            } else if let Some(room) = Room::active_index(&*scn, self.camera_3d.position) {
                 Room::traverse(
                     room,
                     &mut draw,
@@ -612,6 +313,10 @@ impl<'a> Scene<'a> {
             }
         }
 
+        for particle in &mut self.particle_list {
+            particle.draw_3d(&mut draw, &self.camera_3d, &mut self.asset)?;
+        }
+
         call(&mut draw)
     }
 
@@ -621,29 +326,57 @@ impl<'a> Scene<'a> {
         draw: &mut RaylibDrawHandle,
         mut call: F,
     ) -> anyhow::Result<()> {
-        let texture = self.texture.as_mut().unwrap();
+        {
+            let texture = self.texture.as_mut().unwrap();
+
+            if draw.is_key_down(KeyboardKey::KEY_X) {
+                let mut draw = draw.begin_mode2D(self.camera_2d);
+
+                draw.draw_texture_pro(
+                    &texture,
+                    Rectangle::new(
+                        0.0,
+                        0.0,
+                        texture.texture.width as f32,
+                        -texture.texture.height as f32,
+                    ),
+                    Rectangle::new(
+                        0.0,
+                        0.0,
+                        context.handle.get_screen_width() as f32,
+                        context.handle.get_screen_height() as f32,
+                    ),
+                    Vector2::zero(),
+                    0.0,
+                    Color::WHITE,
+                );
+            } else {
+                let shader = self.asset.get_shader("screen")?;
+                let mut draw = draw.begin_shader_mode(shader);
+                let mut draw = draw.begin_mode2D(self.camera_2d);
+
+                draw.draw_texture_pro(
+                    &texture,
+                    Rectangle::new(
+                        0.0,
+                        0.0,
+                        texture.texture.width as f32,
+                        -texture.texture.height as f32,
+                    ),
+                    Rectangle::new(
+                        0.0,
+                        0.0,
+                        context.handle.get_screen_width() as f32,
+                        context.handle.get_screen_height() as f32,
+                    ),
+                    Vector2::zero(),
+                    0.0,
+                    Color::WHITE,
+                );
+            }
+        }
+
         let mut draw = draw.begin_mode2D(self.camera_2d);
-
-        draw.draw_texture_pro(
-            &texture,
-            Rectangle::new(
-                0.0,
-                0.0,
-                texture.texture.width as f32,
-                -texture.texture.height as f32,
-            ),
-            Rectangle::new(
-                0.0,
-                0.0,
-                context.handle.get_screen_width() as f32,
-                context.handle.get_screen_height() as f32,
-            ),
-            Vector2::zero(),
-            0.0,
-            Color::WHITE,
-        );
-
-        draw.draw_text(&draw.get_fps().to_string(), 8, 8, 32, Color::GREEN);
 
         call(&mut draw)
     }
@@ -671,6 +404,7 @@ impl<'a> Default for Scene<'a> {
             light_list: Vec::default(),
             room_list: Vec::default(),
             view_list: Vec::default(),
+            particle_list: Vec::default(),
             path_list: Vec::default(),
             path_hash: HashMap::default(),
             room_rigid: None,
@@ -695,6 +429,96 @@ pub struct Room {
 }
 
 impl<'a> Room {
+    // TO-DO move room_* into Room, same with other stuff
+    pub fn new(scene: &mut Scene, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        if scene.room_rigid.is_none() {
+            scene.room_rigid = Some(scene.physical.new_rigid_fixed());
+        }
+
+        let shader = scene.asset.get_shader("light")? as *const Shader;
+        let model = scene.asset.set_model(context, path)?;
+
+        for material in model.model.materials_mut() {
+            material.shader = unsafe { **shader };
+        }
+
+        let bound = model.model.get_model_bounding_box();
+
+        let collider = scene
+            .physical
+            .new_cuboid((bound.max - bound.min) * 0.5, scene.room_rigid);
+        scene
+            .physical
+            .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
+        scene.physical.set_collider_sensor(collider, true)?;
+        scene
+            .physical
+            .set_collider_data(collider, scene.room_list.len() as u128)?;
+        scene
+            .physical
+            .set_collider_group(collider, Physical::GROUP_GEOMETRY)?;
+
+        scene.physical.new_model(&model.model, scene.room_rigid)?;
+
+        scene.room_list.push(Room {
+            point: (bound.min + bound.max) * 0.5,
+            angle: Vector3::zero(),
+            scale: (bound.max - bound.min) * 0.5,
+            bound,
+            path: path.to_string(),
+            view: Vec::default(),
+            visible: false,
+            visit: false,
+        });
+
+        Ok(())
+    }
+
+    pub fn active(scene: &Scene, point: Vector3) -> bool {
+        if let Some((_, collider)) = scene.physical.intersect_point(
+            point,
+            None,
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(Physical::GROUP_GEOMETRY),
+        ) {
+            scene.room_list[collider.user_data as usize].visible
+                || scene.room_list[collider.user_data as usize].view.is_empty()
+        } else {
+            false
+        }
+    }
+
+    pub fn active_box(scene: &Scene, point: Vector3, angle: Vector3, shape: Vector3) -> bool {
+        if let Some((_, collider)) = scene.physical.intersect_cuboid(
+            point,
+            angle,
+            shape,
+            None,
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(Physical::GROUP_GEOMETRY),
+        ) {
+            scene.room_list[collider.user_data as usize].visible
+        } else {
+            false
+        }
+    }
+
+    pub fn active_index(scene: &Scene, point: Vector3) -> Option<usize> {
+        if let Some((_, collider)) = scene.physical.intersect_point(
+            point,
+            None,
+            QueryFilter::default()
+                .exclude_solids()
+                .groups(Physical::GROUP_GEOMETRY),
+        ) {
+            Some(collider.user_data as usize)
+        } else {
+            None
+        }
+    }
+
     fn traverse(
         room_index: usize,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
@@ -754,15 +578,296 @@ pub struct View {
     pub room: Vec<usize>,
 }
 
+impl View {
+    pub fn new(scene: &mut Scene, point: Vector3, angle: Vector3) -> anyhow::Result<usize> {
+        let mut view = View::default();
+        view.point = point;
+        view.angle = angle;
+        view.visible = false;
+
+        let index = scene.view_list.len();
+
+        scene.view_list.push(view);
+
+        Ok(index)
+    }
+}
+
 //================================================================
 
-struct Noise {
+pub struct Noise {
     point: Option<Vector3>,
     range: f32,
     alias: Option<usize>,
     path: String,
 }
 
+impl Noise {
+    pub fn sound_play(
+        scene: &mut Scene,
+        app: &App,
+        path: &str,
+        point: Option<Vector3>,
+    ) -> anyhow::Result<()> {
+        let sound = scene.asset.get_sound(path)?;
+
+        if sound.sound.is_playing() {
+            for (i, alias) in sound.alias.iter().enumerate() {
+                if !alias.is_playing() {
+                    if let Some(point) = point {
+                        let (distance, pan) = calculate_distance_pan(scene.camera_3d, point, 8.0);
+                        alias.set_volume(distance * app.user.audio_sound);
+                        alias.set_pan(pan);
+                    } else {
+                        alias.set_volume(app.user.audio_sound);
+                    }
+
+                    alias.play();
+
+                    scene.sound_list.push(Noise {
+                        point,
+                        range: 8.0,
+                        alias: Some(i),
+                        path: path.to_string(),
+                    });
+
+                    return Ok(());
+                }
+            }
+        }
+
+        // TO-DO cull sound if not even audible?
+        if let Some(point) = point {
+            let (distance, pan) = calculate_distance_pan(scene.camera_3d, point, 8.0);
+            sound.sound.set_volume(distance * app.user.audio_sound);
+            sound.sound.set_pan(pan);
+        } else {
+            sound.sound.set_volume(app.user.audio_sound);
+        }
+
+        sound.sound.play();
+
+        scene.sound_list.push(Noise {
+            point,
+            range: 8.0,
+            alias: None,
+            path: path.to_string(),
+        });
+
+        Ok(())
+    }
+
+    pub fn music_play(scene: &mut Scene, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
+        let music = scene.asset.get_music(path)?;
+        music.play_stream();
+
+        scene.music_list.push(Noise {
+            point,
+            range: 8.0,
+            alias: None,
+            path: path.to_string(),
+        });
+
+        Ok(())
+    }
+}
+
+//================================================================
+
 pub struct Path {
     point: Vector3,
+}
+
+impl Path {
+    pub fn new(scene: &mut Scene, point: Vector3) {
+        scene.path_list.push(Path { point });
+        let point = (
+            snap_to_grid(point.x, 16.0) as i32,
+            snap_to_grid(point.y, 16.0) as i32,
+            snap_to_grid(point.z, 16.0) as i32,
+        );
+        let entry = scene.path_hash.entry(point).or_default();
+        entry.push(scene.path_list.len() - 1);
+    }
+}
+
+//================================================================
+
+#[derive(Default)]
+pub struct Light {
+    active: i32,
+    mode: i32,
+    point: i32,
+    focus: i32,
+    color: i32,
+    power: i32,
+    range: i32,
+    attenuation: i32,
+}
+
+impl Light {
+    pub fn new(
+        scene: &mut Scene,
+        point: Vector3,
+        focus: Vector3,
+        color: Color,
+        power: f32,
+        range: f32,
+        attenuation: f32,
+    ) -> anyhow::Result<usize> {
+        let shader = scene.asset.get_shader("light")?;
+        let mut light = Light::default();
+        let index = scene.light_list.len();
+
+        light.active = shader.get_shader_location(&format!("light_list[{}].active", index));
+        light.mode = shader.get_shader_location(&format!("light_list[{}].mode", index));
+        light.point = shader.get_shader_location(&format!("light_list[{}].point", index));
+        light.focus = shader.get_shader_location(&format!("light_list[{}].focus", index));
+        light.color = shader.get_shader_location(&format!("light_list[{}].color", index));
+        light.power = shader.get_shader_location(&format!("light_list[{}].power", index));
+        light.range = shader.get_shader_location(&format!("light_list[{}].range", index));
+        light.attenuation =
+            shader.get_shader_location(&format!("light_list[{}].attenuation", index));
+
+        scene.light_list.push(light);
+
+        Self::set_active(scene, index, true)?;
+        Self::set_mode(scene, index, LightMode::Point)?;
+        Self::set_point(scene, index, point)?;
+        Self::set_focus(scene, index, focus)?;
+        Self::set_color(scene, index, color)?;
+        Self::set_power(scene, index, power)?;
+        Self::set_range(scene, index, range)?;
+        Self::set_attenuation(scene, index, attenuation)?;
+
+        Ok(index)
+    }
+
+    pub fn set_active(scene: &mut Scene, index: usize, active: bool) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.active, if active { 1 } else { 0 });
+
+        Ok(())
+    }
+
+    pub fn set_mode(scene: &mut Scene, index: usize, mode: LightMode) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.mode, mode as i32);
+
+        Ok(())
+    }
+
+    pub fn set_point(scene: &mut Scene, index: usize, point: Vector3) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.point, point);
+
+        Ok(())
+    }
+
+    pub fn set_focus(scene: &mut Scene, index: usize, focus: Vector3) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.focus, focus);
+
+        Ok(())
+    }
+
+    pub fn set_color(scene: &mut Scene, index: usize, color: Color) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+
+        let color = Vector4::new(
+            (color.r as f32 / 255.0) * 0.1,
+            (color.g as f32 / 255.0) * 0.1,
+            (color.b as f32 / 255.0) * 0.1,
+            (color.a as f32 / 255.0) * 0.1,
+        );
+
+        shader.set_shader_value(handle.color, color);
+
+        Ok(())
+    }
+
+    pub fn set_power(scene: &mut Scene, index: usize, power: f32) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.power, power);
+
+        Ok(())
+    }
+
+    pub fn set_range(scene: &mut Scene, index: usize, range: f32) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.range, range);
+
+        Ok(())
+    }
+
+    pub fn set_attenuation(
+        scene: &mut Scene,
+        index: usize,
+        attenuation: f32,
+    ) -> anyhow::Result<()> {
+        let handle = &scene.light_list[index];
+        let shader = scene.asset.get_shader("light")?;
+        shader.set_shader_value(handle.attenuation, attenuation);
+
+        Ok(())
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+pub enum LightMode {
+    #[default]
+    Point = 0,
+    Directional = 1,
+}
+
+//================================================================
+
+pub enum ParticleKind {
+    Linear { point: Vector3 },
+}
+
+struct ParticleNode {
+    point: Vector3,
+}
+
+struct Particle {
+    point: Vector3,
+    path: String,
+    kind: ParticleKind,
+    node_list: Vec<ParticleNode>,
+}
+
+impl<'a> Particle {
+    pub fn new(scene: &mut Scene, point: Vector3) -> anyhow::Result<()> {
+        scene.particle_list.push(Particle {
+            point,
+            path: "data/video/particle.png".to_string(),
+            kind: ParticleKind::Linear { point },
+            node_list: Vec::default(),
+        });
+
+        Ok(())
+    }
+
+    fn draw_3d(
+        &mut self,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        camera: &Camera3D,
+        asset: &mut Asset<'a>,
+    ) -> anyhow::Result<()> {
+        let texture = asset.get_texture(&self.path)?;
+
+        for particle in &mut self.node_list {
+            draw.draw_billboard(camera, texture, particle.point, 1.0, Color::WHITE);
+        }
+
+        Ok(())
+    }
 }
