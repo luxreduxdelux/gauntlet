@@ -54,6 +54,7 @@ use crate::scene::*;
 
 //================================================================
 
+use hashbrown::HashMap;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 use serde::Deserialize;
@@ -62,7 +63,7 @@ use serde::Deserialize;
 
 #[derive(Default)]
 pub struct World<'a> {
-    pub entity_list: Vec<Box<dyn Entity>>,
+    pub entity_list: HashMap<usize, Box<dyn Entity>>,
     pub time: f32,
     step: f32,
     entity_index: usize,
@@ -98,9 +99,8 @@ impl<'a> World<'a> {
         let wrl = &mut world as *mut Self;
         let ctx = context as *mut Context;
 
-        for entity in &mut world.entity_list {
-            world.entity_index += 1;
-            entity.get_info_mutable().index = world.entity_index - 1;
+        for (i, entity) in &mut world.entity_list {
+            entity.get_info_mutable().index = *i;
             entity.create(app, unsafe { &mut *ctx }, unsafe { &mut *wrl })?;
         }
 
@@ -136,16 +136,16 @@ impl<'a> World<'a> {
                     }
                 }
 
-                for entity in &mut self.entity_list {
+                for (_, entity) in &mut self.entity_list {
                     entity.tick(app, context, unsafe { &mut *world })?;
                 }
 
                 if !self.entity_attach.is_empty() {
-                    self.entity_list.append(&mut self.entity_attach);
+                    //self.entity_list.append(&mut self.entity_attach);
                 }
 
-                self.entity_list
-                    .retain_mut(|entity| !entity.get_info().close);
+                //self.entity_list
+                //    .retain_mut(|entity| !entity.get_info().close);
 
                 self.time += Self::TIME_STEP;
                 self.step -= Self::TIME_STEP;
@@ -156,7 +156,7 @@ impl<'a> World<'a> {
 
         if !pause {
             self.scene.draw_3d(context, draw, |draw| {
-                for entity in &mut self.entity_list {
+                for (_, entity) in &mut self.entity_list {
                     entity.draw_3d(app, draw, unsafe { &mut *world })?;
                 }
 
@@ -166,7 +166,7 @@ impl<'a> World<'a> {
 
         self.scene.draw_2d(context, draw, |draw| {
             if !pause {
-                for entity in &mut self.entity_list {
+                for (_, entity) in &mut self.entity_list {
                     entity.draw_2d(app, draw, unsafe { &mut *world })?;
                 }
             }
@@ -224,35 +224,38 @@ impl<'a> World<'a> {
     }
 
     pub fn entity_find(&self, index: usize) -> Option<&Box<dyn Entity>> {
-        self.entity_list
-            .iter()
-            .find(|entity| entity.get_info().index == index)
-            .map(|v| v as _)
+        self.entity_list.get(&index)
     }
 
     pub fn entity_find_mutable(&mut self, index: usize) -> Option<&mut Box<dyn Entity>> {
-        self.entity_list
-            .iter_mut()
-            .find(|entity| entity.get_info().index == index)
-            .map(|v| v as _)
+        self.entity_list.get_mut(&index)
     }
 
     pub fn entity_find_type<T: Entity>(&self, index: usize) -> Option<&T> {
-        self.entity_list
-            .iter()
-            .find(|entity| entity.get_info().index == index && entity.as_any().is::<T>())
-            .map(|v| v.as_any().downcast_ref::<T>().unwrap())
+        if let Some(entity) = self.entity_find(index)
+            && let Some(entity) = entity.as_any().downcast_ref::<T>()
+        {
+            Some(entity)
+        } else {
+            None
+        }
     }
 
     pub fn entity_find_mutable_type<T: Entity>(&mut self, index: usize) -> Option<&mut T> {
-        self.entity_list
-            .iter_mut()
-            .find(|entity| entity.get_info().index == index && entity.as_any().is::<T>())
-            .map(|v| v.as_any_mut().downcast_mut::<T>().unwrap())
+        if let Some(entity) = self.entity_find_mutable(index)
+            && let Some(entity) = entity.as_any_mut().downcast_mut::<T>()
+        {
+            Some(entity)
+        } else {
+            None
+        }
     }
 
     fn fuse_level(&mut self, level: Level) {
-        self.entity_list.extend(level.entity_list);
+        for entity in level.entity_list {
+            self.entity_list.insert(self.entity_index, entity);
+            self.entity_index += 1;
+        }
     }
 }
 

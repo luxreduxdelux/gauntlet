@@ -186,13 +186,17 @@ impl Context {
         })
     }
 
+    pub fn toggle_full_screen(&mut self) {
+        let i = get_current_monitor();
+        self.handle
+            .set_window_size(get_monitor_width(i), get_monitor_height(i));
+        self.handle.toggle_fullscreen();
+    }
+
     /// Apply the user's configuration data to the context.
     pub fn apply_user(&mut self, user: &User) {
         if user.video_full {
-            let i = get_current_monitor();
-            self.handle
-                .set_window_size(get_monitor_width(i), get_monitor_height(i));
-            self.handle.toggle_fullscreen();
+            self.toggle_full_screen();
         }
 
         self.handle.set_target_fps(user.video_rate as u32);
