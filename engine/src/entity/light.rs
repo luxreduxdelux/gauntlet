@@ -57,6 +57,7 @@ use crate::world::*;
 
 //================================================================
 
+use engine_macro::Meta;
 use raylib::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -68,27 +69,16 @@ enum LightKind {
     // 0
     #[default]
     Normal,
-    // 1
     FlickerA,
-    // 6
     FlickerB,
-    // 10
     FlickerC,
-    // 3
     CandleA,
-    // 7
     CandleB,
-    // 8
     CandleC,
-    // 2
     PulseA,
-    // 4
     PulseB,
-    // 5
     PulseC,
-    // 9
     PulseD,
-    // 11
     PulseE,
 }
 
@@ -179,12 +169,27 @@ impl LightKind {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Meta)]
 pub struct Light {
     point: Vector3,
     angle: Vector3,
     //mode: LightType,
+    #[field("The light kind for this light source.", "Normal",
+        "Normal",   "Normal",
+        "FlickerA", "FlickerA",
+        "FlickerB", "FlickerB",
+        "FlickerC", "FlickerC",
+        "CandleA",  "CandleA",
+        "CandleB",  "CandleB",
+        "CandleC",  "CandleC",
+        "PulseA",   "PulseA",
+        "PulseB",   "PulseB",
+        "PulseC",   "PulseC",
+        "PulseD",   "PulseD",
+        "PulseE",   "PulseE"
+    )]
     kind: LightKind,
+    #[field("The light color for this light source.", 255, 255, 255, 255)]
     color: Color,
     #[serde(skip)]
     active: bool,
