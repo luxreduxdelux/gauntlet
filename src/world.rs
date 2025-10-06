@@ -72,8 +72,10 @@ pub struct World<'a> {
 }
 
 impl<'a> World<'a> {
+    /// Game tick time step.
     pub const TIME_STEP: f32 = 1.0 / 60.0;
 
+    /// Create a new world.
     pub fn new(app: &mut App, context: &mut Context) -> anyhow::Result<Self> {
         let mut world = World::default();
 
@@ -83,7 +85,7 @@ impl<'a> World<'a> {
             let level = Level::new("data/level/tutorial/tutorial.json")?;
 
             for model in &level.level {
-                Room::new(
+                Room::attach(
                     &mut world.scene,
                     context,
                     &format!("data/level/tutorial/{model}"),
@@ -91,22 +93,15 @@ impl<'a> World<'a> {
             }
 
             world.fuse_level(level);
-        } else {
-            // TO-DO random level generation algorithm goes here.
         }
 
-        // entity index 0 is meant for the level's rigid-body.
-        world.entity_index = 1;
+        let wrl = &mut world as *mut Self;
+        let ctx = context as *mut Context;
 
-        unsafe {
-            let wrl = &mut world as *mut Self;
-            let ctx = context as *mut Context;
-
-            for entity in &mut world.entity_list {
-                world.entity_index += 1;
-                entity.get_info_mutable().index = world.entity_index - 1;
-                entity.create(app, &mut *ctx, &mut *wrl)?;
-            }
+        for entity in &mut world.entity_list {
+            world.entity_index += 1;
+            entity.get_info_mutable().index = world.entity_index - 1;
+            entity.create(app, unsafe { &mut *ctx }, unsafe { &mut *wrl })?;
         }
 
         world.scene.link()?;
@@ -121,7 +116,7 @@ impl<'a> World<'a> {
         context: &mut Context,
     ) -> anyhow::Result<()> {
         let world = self as *mut Self;
-        let pause = app.layout.is_some() || app.window.logger.active;
+        let pause = app.view.layout.is_some() || app.view.logger.active;
 
         if !pause {
             let frame_time = context.handle.get_frame_time().min(0.25);
@@ -141,10 +136,8 @@ impl<'a> World<'a> {
                     }
                 }
 
-                unsafe {
-                    for entity in &mut self.entity_list {
-                        entity.tick(app, context, &mut *world)?;
-                    }
+                for entity in &mut self.entity_list {
+                    entity.tick(app, context, unsafe { &mut *world })?;
                 }
 
                 if !self.entity_attach.is_empty() {
@@ -161,27 +154,25 @@ impl<'a> World<'a> {
 
         self.scene.update(app, context)?;
 
-        unsafe {
-            if !pause {
-                self.scene.draw_3d(context, draw, |draw| {
-                    for entity in &mut self.entity_list {
-                        entity.draw_3d(app, draw, &mut *world)?;
-                    }
-
-                    Ok(())
-                })?;
-            }
-
-            self.scene.draw_2d(context, draw, |draw| {
-                if !pause {
-                    for entity in &mut self.entity_list {
-                        entity.draw_2d(app, draw, &mut *world)?;
-                    }
+        if !pause {
+            self.scene.draw_3d(context, draw, |draw| {
+                for entity in &mut self.entity_list {
+                    entity.draw_3d(app, draw, unsafe { &mut *world })?;
                 }
 
                 Ok(())
             })?;
         }
+
+        self.scene.draw_2d(context, draw, |draw| {
+            if !pause {
+                for entity in &mut self.entity_list {
+                    entity.draw_2d(app, draw, unsafe { &mut *world })?;
+                }
+            }
+
+            Ok(())
+        })?;
 
         Ok(())
     }

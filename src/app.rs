@@ -48,9 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::helper::*;
 use crate::user::*;
-use crate::utility::*;
-use crate::window::*;
+use crate::view::*;
 use crate::world::*;
 
 //================================================================
@@ -67,9 +67,7 @@ pub struct App<'a> {
     /// Active game world, if any.
     pub world: Option<World<'a>>,
     /// User interface.
-    pub window: Window<'a>,
-    /// User interface layout.
-    pub layout: Option<Layout>,
+    pub view: View<'a>,
     /// User configuration.
     pub user: User,
 }
@@ -118,15 +116,6 @@ impl<'a> App<'a> {
             let ctx = { &mut context as *mut Context };
 
             unsafe {
-                if context.handle.is_key_pressed(KeyboardKey::KEY_F1) {
-                    app = Self::default();
-                    app.initialize(&mut *ctx)?;
-                }
-
-                if context.handle.is_key_pressed(KeyboardKey::KEY_F2) {
-                    app.new_world(&mut context)?;
-                }
-
                 let mut draw = context.handle.begin_drawing(&context.thread);
 
                 draw.clear_background(Color::BLACK);
@@ -137,7 +126,7 @@ impl<'a> App<'a> {
                     world.main(&mut *app, &mut draw, &mut *ctx)?;
                 }
 
-                Layout::draw(&mut *app, &mut draw, &mut *ctx)?;
+                View::draw_layout(&mut *app, &mut draw, &mut *ctx)?;
             }
         }
 
@@ -146,12 +135,11 @@ impl<'a> App<'a> {
 
     /// Initialize the app proper after context is ready.
     pub fn initialize(&mut self, context: &mut Context) -> anyhow::Result<()> {
-        let app = { self as *const Self };
+        let app = { self as *mut Self };
         let ctx = { context as *mut Context };
 
-        self.layout = Some(Layout::Main);
-        self.window
-            .initialize(unsafe { &*app }, unsafe { &mut *ctx })?;
+        self.view
+            .initialize(unsafe { &mut *app }, unsafe { &mut *ctx })?;
 
         Ok(())
     }

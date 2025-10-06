@@ -55,9 +55,9 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
+use crate::helper::*;
 use crate::physical::*;
 use crate::user::*;
-use crate::utility::*;
 use crate::world::*;
 
 //================================================================
@@ -83,7 +83,7 @@ pub struct Player {
     #[serde(skip)]
     state: PlayerState,
     #[serde(skip)]
-    view: View,
+    view: Target,
     #[serde(skip)]
     floor: bool,
     #[serde(skip)]
@@ -127,7 +127,7 @@ impl Entity for Player {
 
         world.player = Some(self.info.index);
 
-        self.view = View::new(
+        self.view = Target::new(
             Vector3::up() * 2.0,
             Vector3::default(),
             app.user.video_field,
@@ -142,7 +142,7 @@ impl Entity for Player {
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if app.user.debug_draw_physical {
+        if app.user.debug.draw_physical {
             world.scene.physical.draw();
         }
 
@@ -203,7 +203,7 @@ impl Entity for Player {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if app.user.debug_frame_rate {
+        if app.user.debug.draw_frame_rate {
             draw.draw_text(&draw.get_fps().to_string(), 8, 8, 32, Color::WHITE);
         }
 
@@ -278,12 +278,12 @@ impl Entity for Player {
             if let Some((collider, _)) = cast
                 && let Ok(Some(entity)) = world.entity_from_collider_mutable(collider)
             {
-                if app.user.input_pull.press() {
+                if app.user.input_pull.get_press() {
                     entity.interact(app, context, unsafe { &mut *wrl }, self)?;
                 }
             }
 
-            if app.user.input_push.down(&context.handle) {
+            if app.user.input_push.get_down(&context.handle) {
                 self.push = (self.push + World::TIME_STEP * 1.5).min(1.0);
             } else {
                 if self.push > 0.0 {
@@ -369,11 +369,11 @@ impl PlayerState {
     const SPEED_JUMP: f32 = 2.75;
 
     fn get_movement_key(handle: &RaylibHandle, key_a: Input, key_b: Input) -> f32 {
-        if key_a.down(handle) {
+        if key_a.get_down(handle) {
             return Self::SPEED_MAX;
         }
 
-        if key_b.down(handle) {
+        if key_b.get_down(handle) {
             return -Self::SPEED_MAX;
         }
 
@@ -406,7 +406,7 @@ impl PlayerState {
                 let move_which = move_x + move_z;
 
                 if player.floor {
-                    if app.user.input_jump.down(handle) {
+                    if app.user.input_jump.get_down(handle) {
                         player.speed.y = 2.75;
                         player.floor = false;
                     }
@@ -448,7 +448,7 @@ impl PlayerState {
         }
     }
 
-    fn view(player: &Player, app: &App, draw: &RaylibHandle) -> View {
+    fn view(player: &Player, app: &App, draw: &RaylibHandle) -> Target {
         match player.state {
             Self::Walk { jump, .. } => {
                 let direction = Direction::new_from_angle(&player.angle);
@@ -463,7 +463,7 @@ impl PlayerState {
                     Vector3::up() * scale * sway
                 };
 
-                View::new(
+                Target::new(
                     point
                         + Vector3::new(
                             0.0,
@@ -474,7 +474,7 @@ impl PlayerState {
                     app.user.video_field + player.zoom * 25.0,
                 )
             }
-            Self::Slam { .. } => View::new(
+            Self::Slam { .. } => Target::new(
                 Vector3::new(0.0, Player::CUBOID_SCALE.y - f32::EPSILON, 0.0),
                 Vector3::new(0.0, 0.0, 0.0),
                 app.user.video_field + 10.0,

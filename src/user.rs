@@ -54,48 +54,70 @@ use std::fmt::Display;
 
 //================================================================
 
+/// User configuration data.
 #[derive(Serialize, Deserialize)]
 pub struct User {
+    /// Developer mode, allow usage of the console.
     pub developer: bool,
+    /// Play the tutorial level.
     pub tutorial: bool,
+    /// Glyph preference.
     pub video_glyph: GlyphKind,
-    pub video_locale: LocaleKind,
+    /// Idiom preference.
+    pub video_idiom: IdiomKind,
+    /// Make the window full-screen.
     pub video_full: bool,
+    /// Field of view.
     pub video_field: f32,
+    /// Camera shake.
     pub video_shake: f32,
+    /// Render scale.
     pub video_scale: f32,
+    /// Camera tilt.
     pub video_tilt: f32,
+    /// Frame rate.
     pub video_rate: f32,
+    /// Screen brightness.
     pub video_brightness: f32,
+    /// Screen contrast.
     pub video_contrast: f32,
+    /// Cross-hair.
     pub video_cross: bool,
+    /// Sound volume.
     pub audio_sound: f32,
+    /// Music volume.
     pub audio_music: f32,
+    /// Movement key (+X).
     pub input_move_x_a: Input,
+    /// Movement key (-X).
     pub input_move_x_b: Input,
+    /// Movement key (+Z).
     pub input_move_z_a: Input,
+    /// Movement key (-Z).
     pub input_move_z_b: Input,
+    /// Jump key.
     pub input_jump: Input,
+    /// Push key.
     pub input_push: Input,
+    /// Pull key.
     pub input_pull: Input,
+    /// Info key.
     pub input_info: Input,
+    /// Mouse sensitivity.
     pub input_mouse_scale: f32,
+    /// Debug user data.
     #[serde(skip)]
-    pub debug_draw_physical: bool,
-    #[serde(skip)]
-    pub debug_draw_entity: bool,
-    #[serde(skip)]
-    pub debug_frame_rate: bool,
-    #[serde(skip)]
-    pub debug_light_edit: bool,
+    pub debug: Debug,
 }
 
 impl User {
+    /// Path to user file.
     const PATH_FILE: &'static str = "user.json";
 }
 
 impl Default for User {
     fn default() -> Self {
+        // Read the user data file if present and parseable.
         if let Ok(file) = std::fs::read_to_string(Self::PATH_FILE)
             && let Ok(data) = serde_json::from_str(&file)
         {
@@ -105,7 +127,7 @@ impl Default for User {
                 developer: true,
                 tutorial: true,
                 video_glyph: GlyphKind::PlayStation,
-                video_locale: LocaleKind::English,
+                video_idiom: IdiomKind::English,
                 video_full: false,
                 video_field: 90.0,
                 video_shake: 1.0,
@@ -126,10 +148,7 @@ impl Default for User {
                 input_pull: Input::new_mouse(MouseButton::MOUSE_BUTTON_RIGHT),
                 input_info: Input::new_board(KeyboardKey::KEY_TAB),
                 input_mouse_scale: 1.0,
-                debug_draw_physical: false,
-                debug_draw_entity: false,
-                debug_frame_rate: false,
-                debug_light_edit: false,
+                debug: Default::default(),
             }
         }
     }
@@ -137,6 +156,7 @@ impl Default for User {
 
 impl Drop for User {
     fn drop(&mut self) {
+        // Write user data to file.
         let data = serde_json::to_string_pretty(self).unwrap();
         std::fs::write(Self::PATH_FILE, data).unwrap();
     }
@@ -144,36 +164,217 @@ impl Drop for User {
 
 //================================================================
 
+/// An abstraction over the device method for a given action.
 #[derive(Serialize, Deserialize, Copy, Clone, Debug)]
-pub enum Input {
-    Board {
-        key: u32,
-        #[serde(skip)]
-        press: bool,
-        #[serde(skip)]
-        release: bool,
-    },
-    Mouse {
-        key: u32,
-        #[serde(skip)]
-        press: bool,
-        #[serde(skip)]
-        release: bool,
-    },
-    Pad {
-        key: u32,
-        #[serde(skip)]
-        press: bool,
-        #[serde(skip)]
-        release: bool,
-    },
+pub struct Input {
+    /// Button code.
+    key: u32,
+    /// Input kind.
+    kind: InputKind,
+    /// Press state.
+    #[serde(skip)]
+    press: bool,
+    /// Release state.
+    #[serde(skip)]
+    release: bool,
+}
+
+/// Device method choice.
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+pub enum InputKind {
+    /// Board device.
+    Board,
+    /// Mouse device.
+    Mouse,
+    /// Pad device.
+    Pad,
+}
+
+impl Input {
+    /// Create a new input instance (board).
+    pub fn new_board(key: KeyboardKey) -> Input {
+        Input {
+            key: key as u32,
+            press: false,
+            release: false,
+            kind: InputKind::Board,
+        }
+    }
+
+    /// Create a new input instance (mouse).
+    pub fn new_mouse(key: MouseButton) -> Input {
+        Input {
+            key: key as u32,
+            press: false,
+            release: false,
+            kind: InputKind::Mouse,
+        }
+    }
+
+    /// Create a new input instance (pad).
+    pub fn new_pad(key: GamepadButton) -> Input {
+        Input {
+            key: key as u32,
+            press: false,
+            release: false,
+            kind: InputKind::Pad,
+        }
+    }
+
+    //================================================================
+
+    /// Cast this instance to a KeyboardKey.
+    pub fn to_board(&self) -> KeyboardKey {
+        unsafe { std::mem::transmute(self.key) }
+    }
+
+    /// Cast this instance to a MouseButton.
+    pub fn to_mouse(&self) -> MouseButton {
+        unsafe { std::mem::transmute(self.key) }
+    }
+
+    /// Cast this instance to a GamepadButton.
+    pub fn to_pad(&self) -> GamepadButton {
+        unsafe { std::mem::transmute(self.key) }
+    }
+
+    //================================================================
+
+    /// Poll the input state.
+    pub fn poll(&mut self, handle: &RaylibHandle) {
+        match self.kind {
+            InputKind::Board => {
+                if handle.is_key_pressed(self.to_board()) {
+                    self.press = true;
+                }
+
+                if handle.is_key_released(self.to_board()) {
+                    self.release = true;
+                }
+            }
+            InputKind::Mouse => {
+                if handle.is_mouse_button_pressed(self.to_mouse()) {
+                    self.press = true;
+                }
+
+                if handle.is_mouse_button_released(self.to_mouse()) {
+                    self.release = true;
+                }
+            }
+            InputKind::Pad => {
+                if handle.is_gamepad_button_pressed(0, self.to_pad()) {
+                    self.press = true;
+                }
+
+                if handle.is_gamepad_button_released(0, self.to_pad()) {
+                    self.release = true;
+                }
+            }
+        }
+    }
+
+    /// Wipe the input state.
+    pub fn wipe(&mut self) {
+        self.press = false;
+        self.release = false;
+    }
+
+    //================================================================
+
+    /// Get key code.
+    pub fn get_key(&self) -> u32 {
+        self.key
+    }
+
+    /// Get input kind.
+    pub fn get_kind(&self) -> InputKind {
+        self.kind
+    }
+
+    /// Get the current input state (up).
+    pub fn get_up(&self, handle: &RaylibHandle) -> bool {
+        match self.kind {
+            InputKind::Board => handle.is_key_up(self.to_board()),
+            InputKind::Mouse => handle.is_mouse_button_up(self.to_mouse()),
+            InputKind::Pad => handle.is_gamepad_button_up(0, self.to_pad()),
+        }
+    }
+
+    /// Get the current input state (down).
+    pub fn get_down(&self, handle: &RaylibHandle) -> bool {
+        match self.kind {
+            InputKind::Board => handle.is_key_down(self.to_board()),
+            InputKind::Mouse => handle.is_mouse_button_down(self.to_mouse()),
+            InputKind::Pad => handle.is_gamepad_button_down(0, self.to_pad()),
+        }
+    }
+
+    /// Get the current input state (press).
+    pub fn get_press(&self) -> bool {
+        self.press
+    }
+
+    /// Get the current input state (release).
+    pub fn get_release(&mut self) -> bool {
+        self.release
+    }
+
+    //================================================================
+
+    /// Convenience function for checking if a key is pressed or repeatedly being pressed.
+    pub fn get_key_pressed_or_repeat(handle: &RaylibHandle, key: KeyboardKey) -> bool {
+        handle.is_key_pressed(key) || handle.is_key_pressed_repeat(key)
+    }
+
+    /// Convenience function for getting the last mouse button pressed.
+    pub fn get_mouse_pressed(handle: &RaylibHandle) -> Option<MouseButton> {
+        let list = [
+            MouseButton::MOUSE_BUTTON_LEFT,
+            MouseButton::MOUSE_BUTTON_RIGHT,
+            MouseButton::MOUSE_BUTTON_MIDDLE,
+            MouseButton::MOUSE_BUTTON_SIDE,
+            MouseButton::MOUSE_BUTTON_EXTRA,
+            MouseButton::MOUSE_BUTTON_FORWARD,
+            MouseButton::MOUSE_BUTTON_BACK,
+        ];
+
+        list.into_iter()
+            .find(|&button| handle.is_mouse_button_pressed(button))
+    }
+
+    /// Convenience function for getting the last pad button pressed.
+    pub fn get_gamepad_button_pressed(handle: &RaylibHandle, index: i32) -> Option<GamepadButton> {
+        let list = [
+            GamepadButton::GAMEPAD_BUTTON_UNKNOWN,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE,
+            GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT,
+            GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB,
+            GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB,
+        ];
+
+        list.into_iter()
+            .find(|&button| handle.is_gamepad_button_pressed(index, button))
+    }
 }
 
 impl Display for Input {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let string = match self {
-            Self::Board { key, .. } => {
-                let key = Self::to_board(*key);
+        let string = match self.kind {
+            InputKind::Board => {
+                let key = self.to_board();
 
                 match key {
                     KeyboardKey::KEY_NULL => "Null",
@@ -295,180 +496,9 @@ impl Display for Input {
     }
 }
 
-impl Input {
-    pub fn new_board(key: KeyboardKey) -> Input {
-        Input::Board {
-            key: key as u32,
-            press: false,
-            release: false,
-        }
-    }
-
-    pub fn new_mouse(key: MouseButton) -> Input {
-        Input::Mouse {
-            key: key as u32,
-            press: false,
-            release: false,
-        }
-    }
-
-    pub fn new_pad(key: GamepadButton) -> Input {
-        Input::Pad {
-            key: key as u32,
-            press: false,
-            release: false,
-        }
-    }
-
-    pub fn get_mouse_pressed(handle: &RaylibHandle) -> Option<MouseButton> {
-        let list = [
-            MouseButton::MOUSE_BUTTON_LEFT,
-            MouseButton::MOUSE_BUTTON_RIGHT,
-            MouseButton::MOUSE_BUTTON_MIDDLE,
-            MouseButton::MOUSE_BUTTON_SIDE,
-            MouseButton::MOUSE_BUTTON_EXTRA,
-            MouseButton::MOUSE_BUTTON_FORWARD,
-            MouseButton::MOUSE_BUTTON_BACK,
-        ];
-
-        list.into_iter()
-            .find(|&button| handle.is_mouse_button_pressed(button))
-    }
-
-    pub fn get_gamepad_button_pressed(handle: &RaylibHandle, index: i32) -> Option<GamepadButton> {
-        let list = [
-            GamepadButton::GAMEPAD_BUTTON_UNKNOWN,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_UP,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_RIGHT,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_DOWN,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_FACE_LEFT,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_UP,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_RIGHT,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_FACE_LEFT,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_1,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_TRIGGER_2,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_1,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_TRIGGER_2,
-            GamepadButton::GAMEPAD_BUTTON_MIDDLE_LEFT,
-            GamepadButton::GAMEPAD_BUTTON_MIDDLE,
-            GamepadButton::GAMEPAD_BUTTON_MIDDLE_RIGHT,
-            GamepadButton::GAMEPAD_BUTTON_LEFT_THUMB,
-            GamepadButton::GAMEPAD_BUTTON_RIGHT_THUMB,
-        ];
-
-        list.into_iter()
-            .find(|&button| handle.is_gamepad_button_pressed(index, button))
-    }
-
-    pub fn to_board(value: u32) -> KeyboardKey {
-        unsafe { std::mem::transmute(value) }
-    }
-
-    pub fn to_mouse(value: u32) -> MouseButton {
-        unsafe { std::mem::transmute(value) }
-    }
-
-    pub fn to_pad(value: u32) -> GamepadButton {
-        unsafe { std::mem::transmute(value) }
-    }
-
-    pub fn poll(&mut self, handle: &RaylibHandle) {
-        match self {
-            Input::Board {
-                key,
-                press,
-                release,
-            } => {
-                if handle.is_key_pressed(Self::to_board(*key)) {
-                    *press = true;
-                }
-
-                if handle.is_key_released(Self::to_board(*key)) {
-                    *release = true;
-                }
-            }
-            Input::Mouse {
-                key,
-                press,
-                release,
-            } => {
-                if handle.is_mouse_button_pressed(Self::to_mouse(*key)) {
-                    *press = true;
-                }
-
-                if handle.is_mouse_button_released(Self::to_mouse(*key)) {
-                    *release = true;
-                }
-            }
-            Input::Pad {
-                key,
-                press,
-                release,
-            } => {
-                if handle.is_gamepad_button_pressed(0, Self::to_pad(*key)) {
-                    *press = true;
-                }
-
-                if handle.is_gamepad_button_released(0, Self::to_pad(*key)) {
-                    *release = true;
-                }
-            }
-        }
-    }
-
-    pub fn wipe(&mut self) {
-        match self {
-            Input::Board { press, release, .. } => {
-                *press = false;
-                *release = false;
-            }
-            Input::Mouse { press, release, .. } => {
-                *press = false;
-                *release = false;
-            }
-            Input::Pad { press, release, .. } => {
-                *press = false;
-                *release = false;
-            }
-        }
-    }
-
-    pub fn up(&self, handle: &RaylibHandle) -> bool {
-        match self {
-            Input::Board { key, .. } => handle.is_key_up(Self::to_board(*key)),
-            Input::Mouse { key, .. } => handle.is_mouse_button_up(Self::to_mouse(*key)),
-            Input::Pad { key, .. } => handle.is_gamepad_button_up(0, Self::to_pad(*key)),
-        }
-    }
-
-    pub fn down(&self, handle: &RaylibHandle) -> bool {
-        match self {
-            Input::Board { key, .. } => handle.is_key_down(Self::to_board(*key)),
-            Input::Mouse { key, .. } => handle.is_mouse_button_down(Self::to_mouse(*key)),
-            Input::Pad { key, .. } => handle.is_gamepad_button_down(0, Self::to_pad(*key)),
-        }
-    }
-
-    pub fn press(&self) -> bool {
-        match self {
-            Input::Board { press, .. } => *press,
-            Input::Mouse { press, .. } => *press,
-            Input::Pad { press, .. } => *press,
-        }
-    }
-
-    pub fn release(&mut self) -> bool {
-        match self {
-            Input::Board { release, .. } => *release,
-            Input::Mouse { release, .. } => *release,
-            Input::Pad { release, .. } => *release,
-        }
-    }
-}
-
 //================================================================
 
+/// Glyph preference.
 #[derive(Default, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum GlyphKind {
     #[default]
@@ -501,13 +531,14 @@ impl Display for GlyphKind {
 
 //================================================================
 
+/// Idiom preference.
 #[derive(PartialEq, Copy, Clone, Serialize, Deserialize)]
-pub enum LocaleKind {
+pub enum IdiomKind {
     English,
     Spanish,
 }
 
-impl Display for LocaleKind {
+impl Display for IdiomKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let string = match self {
             Self::English => "English",
@@ -516,4 +547,19 @@ impl Display for LocaleKind {
 
         f.write_str(string)
     }
+}
+
+//================================================================
+
+/// Debug user data.
+#[derive(Default)]
+pub struct Debug {
+    /// Draw the world physical simulation.
+    pub draw_physical: bool,
+    /// Draw point entity.
+    pub draw_entity: bool,
+    /// Draw the frame rate.
+    pub draw_frame_rate: bool,
+    /// Draw the light edit menu.
+    pub draw_light_edit: bool,
 }

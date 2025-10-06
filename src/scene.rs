@@ -48,22 +48,20 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+use crate::app::*;
+use crate::asset::*;
+use crate::helper::*;
+use crate::physical::*;
+
+//================================================================
+
 use hashbrown::HashMap;
 use rapier3d::prelude::*;
 use raylib::prelude::*;
 
 //================================================================
 
-use crate::app::*;
-use crate::asset::*;
-use crate::physical::*;
-use crate::utility::*;
-
-//================================================================
-
-// TO-DO implement particle system
-// TO-DO: been told by raylib contributor to use another audio solution for
-// spacialization and better audio management, research another library.
+/// Scene manager.
 pub struct Scene<'a> {
     pub asset: Asset<'a>,
     pub camera_3d: Camera3D,
@@ -75,9 +73,8 @@ pub struct Scene<'a> {
     room_list: Vec<Room>,
     // TO-DO make setter for this.
     pub view_list: Vec<View>,
-    particle_list: Vec<Particle>,
     path_list: Vec<Path>,
-    path_hash: HashMap<(i32, i32, i32), Vec<usize>>,
+    particle_list: Vec<Particle>,
     pub physical: Physical,
     pub room_rigid: Option<RigidBodyHandle>,
     pub pause: bool,
@@ -126,7 +123,7 @@ impl<'a> Scene<'a> {
                 let direction_f = raylib::math::Ray::new(view.point, direction.x);
                 let direction_b = raylib::math::Ray::new(view.point, direction.x * -1.0);
 
-                let model = self.asset.get_model(&room.path)?;
+                let model = self.asset.get_model(&room.model)?;
                 let bound = model.model.get_model_bounding_box();
 
                 let hit_f = bound.get_ray_collision_box(direction_f);
@@ -172,6 +169,17 @@ impl<'a> Scene<'a> {
             } else {
                 music.resume_stream();
             }
+        }
+
+        Ok(())
+    }
+
+    pub fn set_model(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        let shader = self.asset.get_shader("light")? as *const Shader;
+        let model = self.asset.set_model(context, path)?;
+
+        for material in model.model.materials_mut() {
+            material.shader = unsafe { **shader };
         }
 
         Ok(())
@@ -236,17 +244,6 @@ impl<'a> Scene<'a> {
         Ok(())
     }
 
-    pub fn set_model(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
-        let shader = self.asset.get_shader("light")? as *const Shader;
-        let model = self.asset.set_model(context, path)?;
-
-        for material in model.model.materials_mut() {
-            material.shader = unsafe { **shader };
-        }
-
-        Ok(())
-    }
-
     pub fn update_resolution(&mut self, context: &mut Context, scale: f32) -> anyhow::Result<()> {
         let size = Vector2::new(
             context.handle.get_screen_width() as f32 * scale,
@@ -298,7 +295,7 @@ impl<'a> Scene<'a> {
             // HACK: menu view isn't working, i assume it's we don't have any view node?
             if self.view_list.is_empty() {
                 for room in &self.room_list {
-                    let model = self.asset.get_model(&room.path).unwrap();
+                    let model = self.asset.get_model(&room.model).unwrap();
                     draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
                 }
             } else if let Some(room) = Room::active_index(&*scn, self.camera_3d.position) {
@@ -385,7 +382,7 @@ impl<'a> Scene<'a> {
 impl<'a> Default for Scene<'a> {
     fn default() -> Self {
         Self {
-            asset: Asset::default(),
+            asset: Default::default(),
             camera_3d: Camera3D::perspective(
                 Vector3::default(),
                 Vector3::default(),
@@ -398,39 +395,40 @@ impl<'a> Default for Scene<'a> {
                 rotation: 0.0,
                 zoom: 1.0,
             },
-            texture: None,
-            sound_list: Vec::default(),
-            music_list: Vec::default(),
-            light_list: Vec::default(),
-            room_list: Vec::default(),
-            view_list: Vec::default(),
-            particle_list: Vec::default(),
-            path_list: Vec::default(),
-            path_hash: HashMap::default(),
-            room_rigid: None,
-            physical: Physical::default(),
-            pause: bool::default(),
+            texture: Default::default(),
+            sound_list: Default::default(),
+            music_list: Default::default(),
+            light_list: Default::default(),
+            room_list: Default::default(),
+            view_list: Default::default(),
+            path_list: Default::default(),
+            particle_list: Default::default(),
+            room_rigid: Default::default(),
+            physical: Default::default(),
+            pause: Default::default(),
         }
     }
 }
 
 //================================================================
 
+/// A room in the scene, which can only be drawn if one view node bound to it is visible.
 #[derive(Default, Debug, Clone)]
 pub struct Room {
     pub point: Vector3,
     pub angle: Vector3,
     pub scale: Vector3,
     pub bound: BoundingBox,
-    pub path: String,
+    pub model: String,
     pub view: Vec<usize>,
+    pub path: Vec<usize>,
     pub visible: bool,
     pub visit: bool,
 }
 
 impl<'a> Room {
-    // TO-DO move room_* into Room, same with other stuff
-    pub fn new(scene: &mut Scene, context: &mut Context, path: &str) -> anyhow::Result<()> {
+    // Attach a new room to the scene.
+    pub fn attach(scene: &mut Scene, context: &mut Context, path: &str) -> anyhow::Result<()> {
         if scene.room_rigid.is_none() {
             scene.room_rigid = Some(scene.physical.new_rigid_fixed());
         }
@@ -450,7 +448,6 @@ impl<'a> Room {
         scene
             .physical
             .set_collider_point(collider, (bound.min + bound.max) * 0.5)?;
-        //scene.physical.set_collider_sensor(collider, true)?;
         scene
             .physical
             .set_collider_data(collider, scene.room_list.len() as u128)?;
@@ -469,8 +466,9 @@ impl<'a> Room {
             angle: Vector3::zero(),
             scale: (bound.max - bound.min) * 0.5,
             bound,
-            path: path.to_string(),
+            model: path.to_string(),
             view: Vec::default(),
+            path: Vec::default(),
             visible: false,
             visit: false,
         });
@@ -478,6 +476,7 @@ impl<'a> Room {
         Ok(())
     }
 
+    // Determine if a point is inside of a room, and if it is, whether or not that room is visible.
     pub fn active(scene: &Scene, point: Vector3) -> bool {
         if let Some((_, collider)) = scene.physical.intersect_point(
             point,
@@ -487,13 +486,13 @@ impl<'a> Room {
                 Physical::GROUP_GEOMETRY_SENSOR,
             )),
         ) {
-            scene.room_list[collider.user_data as usize].visible
-                || scene.room_list[collider.user_data as usize].view.is_empty()
+            scene.room_list[collider.user_data as usize].is_visible(&scene.view_list)
         } else {
             false
         }
     }
 
+    // Determine if a box is inside of a room, and if it is, whether or not that room is visible.
     pub fn active_box(scene: &Scene, point: Vector3, angle: Vector3, shape: Vector3) -> bool {
         if let Some((_, collider)) = scene.physical.intersect_cuboid(
             point,
@@ -505,12 +504,13 @@ impl<'a> Room {
                 Physical::GROUP_GEOMETRY_SENSOR,
             )),
         ) {
-            scene.room_list[collider.user_data as usize].visible
+            scene.room_list[collider.user_data as usize].is_visible(&scene.view_list)
         } else {
             false
         }
     }
 
+    // Determine if a box is inside of a room, and if it is, return the index to it.
     pub fn active_index(scene: &Scene, point: Vector3) -> Option<usize> {
         if let Some((_, collider)) = scene.physical.intersect_point(
             point,
@@ -526,6 +526,7 @@ impl<'a> Room {
         }
     }
 
+    // Recursively draw each room.
     fn traverse(
         room_index: usize,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
@@ -545,7 +546,7 @@ impl<'a> Room {
         if current_room.is_visible(view_list) || inside {
             current_room.visible = true;
 
-            let model = asset.get_model(&current_room.path).unwrap();
+            let model = asset.get_model(&current_room.model).unwrap();
             draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
 
             let c_r_view = current_room.view.clone();
@@ -560,8 +561,9 @@ impl<'a> Room {
         }
     }
 
+    // Determine if the room is visible.
     fn is_visible(&self, view_list: &[View]) -> bool {
-        if self.view.is_empty() {
+        if self.visible || self.view.is_empty() {
             return true;
         }
 
@@ -577,6 +579,7 @@ impl<'a> Room {
 
 //================================================================
 
+/// A view portal, which will determine the visibility of each room bound to it.
 #[derive(Default, Debug, Clone)]
 pub struct View {
     pub point: Vector3,
@@ -586,15 +589,16 @@ pub struct View {
 }
 
 impl View {
-    pub fn new(scene: &mut Scene, point: Vector3, angle: Vector3) -> anyhow::Result<usize> {
-        let mut view = View::default();
-        view.point = point;
-        view.angle = angle;
-        view.visible = false;
-
+    /// Attach a new view node to the scene.
+    pub fn attach(scene: &mut Scene, point: Vector3, angle: Vector3) -> anyhow::Result<usize> {
         let index = scene.view_list.len();
 
-        scene.view_list.push(view);
+        scene.view_list.push(View {
+            point,
+            angle,
+            visible: Default::default(),
+            room: Default::default(),
+        });
 
         Ok(index)
     }
@@ -602,14 +606,20 @@ impl View {
 
 //================================================================
 
+/// An active noise source.
 pub struct Noise {
+    /// Point in the world. None if noise should not spatialize.
     point: Option<Vector3>,
+    /// Range of noise source.
     range: f32,
+    /// Index of alias, if noise is an alias for a sound.
     alias: Option<usize>,
+    /// Path to asset.
     path: String,
 }
 
 impl Noise {
+    /// Attach a new sound source to the scene.
     pub fn sound_play(
         scene: &mut Scene,
         app: &App,
@@ -664,6 +674,7 @@ impl Noise {
         Ok(())
     }
 
+    /// Attach a new music source to the scene.
     pub fn music_play(scene: &mut Scene, path: &str, point: Option<Vector3>) -> anyhow::Result<()> {
         let music = scene.asset.get_music(path)?;
         music.play_stream();
@@ -686,15 +697,9 @@ pub struct Path {
 }
 
 impl Path {
-    pub fn new(scene: &mut Scene, point: Vector3) {
+    /// Attach a new path to the scene.
+    pub fn attach(scene: &mut Scene, point: Vector3) {
         scene.path_list.push(Path { point });
-        let point = (
-            snap_to_grid(point.x, 16.0) as i32,
-            snap_to_grid(point.y, 16.0) as i32,
-            snap_to_grid(point.z, 16.0) as i32,
-        );
-        let entry = scene.path_hash.entry(point).or_default();
-        entry.push(scene.path_list.len() - 1);
     }
 }
 
@@ -702,18 +707,27 @@ impl Path {
 
 #[derive(Default)]
 pub struct Light {
-    active: i32,
+    /// Shader location for "enable".
+    enable: i32,
+    /// Shader location for "mode".
     mode: i32,
+    /// Shader location for "point".
     point: i32,
+    /// Shader location for "focus".
     focus: i32,
+    /// Shader location for "color".
     color: i32,
+    /// Shader location for "power".
     power: i32,
+    /// Shader location for "range".
     range: i32,
+    /// Shader location for "attenuation".
     attenuation: i32,
 }
 
 impl Light {
-    pub fn new(
+    /// Attach a new light to the scene.
+    pub fn attach(
         scene: &mut Scene,
         point: Vector3,
         focus: Vector3,
@@ -726,7 +740,7 @@ impl Light {
         let mut light = Light::default();
         let index = scene.light_list.len();
 
-        light.active = shader.get_shader_location(&format!("light_list[{}].active", index));
+        light.enable = shader.get_shader_location(&format!("light_list[{}].enable", index));
         light.mode = shader.get_shader_location(&format!("light_list[{}].mode", index));
         light.point = shader.get_shader_location(&format!("light_list[{}].point", index));
         light.focus = shader.get_shader_location(&format!("light_list[{}].focus", index));
@@ -738,7 +752,7 @@ impl Light {
 
         scene.light_list.push(light);
 
-        Self::set_active(scene, index, true)?;
+        Self::set_enable(scene, index, true)?;
         Self::set_mode(scene, index, LightMode::Point)?;
         Self::set_point(scene, index, point)?;
         Self::set_focus(scene, index, focus)?;
@@ -750,14 +764,16 @@ impl Light {
         Ok(index)
     }
 
-    pub fn set_active(scene: &mut Scene, index: usize, active: bool) -> anyhow::Result<()> {
+    /// Set the active state of the light.
+    pub fn set_enable(scene: &mut Scene, index: usize, active: bool) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
-        shader.set_shader_value(handle.active, if active { 1 } else { 0 });
+        shader.set_shader_value(handle.enable, if active { 1 } else { 0 });
 
         Ok(())
     }
 
+    /// Set the mode of the light.
     pub fn set_mode(scene: &mut Scene, index: usize, mode: LightMode) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -766,6 +782,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the point of the light.
     pub fn set_point(scene: &mut Scene, index: usize, point: Vector3) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -774,6 +791,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the focus of the light.
     pub fn set_focus(scene: &mut Scene, index: usize, focus: Vector3) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -782,6 +800,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the color of the light.
     pub fn set_color(scene: &mut Scene, index: usize, color: Color) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -798,6 +817,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the power of the light.
     pub fn set_power(scene: &mut Scene, index: usize, power: f32) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -806,6 +826,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the range of the light.
     pub fn set_range(scene: &mut Scene, index: usize, range: f32) -> anyhow::Result<()> {
         let handle = &scene.light_list[index];
         let shader = scene.asset.get_shader("light")?;
@@ -814,6 +835,7 @@ impl Light {
         Ok(())
     }
 
+    /// Set the attenuation of the light.
     pub fn set_attenuation(
         scene: &mut Scene,
         index: usize,
@@ -827,22 +849,17 @@ impl Light {
     }
 }
 
+/// Every possible mode for a light.
 #[derive(Default, Copy, Clone)]
 pub enum LightMode {
+    /// Omni-directional/point light.
     #[default]
     Point = 0,
+    /// Directional light.
     Directional = 1,
 }
 
 //================================================================
-
-pub enum ParticleKind {
-    Linear { point: Vector3 },
-}
-
-struct ParticleNode {
-    point: Vector3,
-}
 
 struct Particle {
     point: Vector3,
@@ -852,7 +869,7 @@ struct Particle {
 }
 
 impl<'a> Particle {
-    pub fn new(scene: &mut Scene, point: Vector3) -> anyhow::Result<()> {
+    pub fn attach(scene: &mut Scene, point: Vector3) -> anyhow::Result<()> {
         scene.particle_list.push(Particle {
             point,
             path: "data/video/particle.png".to_string(),
@@ -877,4 +894,12 @@ impl<'a> Particle {
 
         Ok(())
     }
+}
+
+pub enum ParticleKind {
+    Linear { point: Vector3 },
+}
+
+struct ParticleNode {
+    point: Vector3,
 }

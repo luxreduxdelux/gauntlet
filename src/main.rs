@@ -58,11 +58,11 @@
 mod app;
 mod asset;
 mod entity;
+mod helper;
 mod physical;
 mod scene;
 mod user;
-mod utility;
-mod window;
+mod view;
 mod world;
 
 //================================================================

@@ -52,8 +52,8 @@ use crate::app::*;
 use crate::entity::implementation::*;
 use crate::entity::player::*;
 use crate::physical::*;
-use crate::utility::Direction;
-use crate::utility::draw_model_transform;
+use crate::helper::Direction;
+use crate::helper::draw_model_transform;
 use crate::world::*;
 
 //================================================================
@@ -217,7 +217,7 @@ impl Wield for Weapon {
 
         let wrl = { world as *mut World };
 
-        if app.user.input_push.press()
+        if app.user.input_push.get_press()
             && self.ammo > 0
             && let Some(player) = world.player
             && let Some(player) = world.entity_find_mutable_type::<Player>(player)
@@ -246,7 +246,7 @@ impl Wield for Weapon {
 
         let point = world.scene.camera_3d.position;
 
-        if app.user.input_pull.press()
+        if app.user.input_pull.get_press()
             && let Some(player) = world.player
             && let Some(player) = world.entity_find_mutable_type::<Player>(player)
         {

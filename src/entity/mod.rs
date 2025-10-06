@@ -48,13 +48,9 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-pub mod destructible;
 pub mod door;
-pub mod dummy;
-pub mod enemy;
 pub mod implementation;
 pub mod light;
 pub mod particle;
 pub mod player;
-pub mod target;
 pub mod weapon;

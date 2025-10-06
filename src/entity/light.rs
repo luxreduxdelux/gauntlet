@@ -51,8 +51,8 @@
 use crate::app::*;
 use crate::entity::implementation::*;
 use crate::scene::*;
-use crate::utility::*;
-use crate::window::Window;
+use crate::helper::*;
+use crate::view::View;
 use crate::world::*;
 
 //================================================================
@@ -224,7 +224,7 @@ impl Entity for Light {
         self.range = 4.00;
         self.attenuation = 0.25;
 
-        self.handle = Some(crate::scene::Light::new(
+        self.handle = Some(crate::scene::Light::attach(
             &mut world.scene,
             self.point,
             Vector3::zero(),
@@ -247,14 +247,12 @@ impl Entity for Light {
             let active = Room::active(&world.scene, self.point);
 
             if (active && !self.active) || (!active && self.active) {
-                app.window.logger.print_warning(&format!("Light {} toggle {}", self.info.index, self.active));
-
                 self.active = !self.active;
-                crate::scene::Light::set_active(&mut world.scene, *handle, self.active)?;
+                crate::scene::Light::set_enable(&mut world.scene, *handle, self.active)?;
             }
         }
 
-        if app.user.debug_light_edit {
+        if app.user.debug.draw_light_edit {
             draw.draw_cube_v(self.point, Vector3::one() * 0.5, Color::RED);
         }
 
@@ -268,26 +266,26 @@ impl Entity for Light {
         draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
         world: &mut World,
     ) -> anyhow::Result<()> {
-        if !app.user.debug_light_edit {
+        if !app.user.debug.draw_light_edit {
             return Ok(());
         }
 
         let focus = self.focus;
 
         if self.focus {
-            Window::draw(app, draw, |app, draw| {
+            View::draw(app, draw, |app, draw| {
                 let handle = self.handle.as_mut().unwrap();
                 let mut r = self.color.r as f32;
                 let mut g = self.color.g as f32;
                 let mut b = self.color.b as f32;
 
-                app.window.slider(draw, "Color (R)", &mut r, (0.0, 255.0), 1.0)?;
-                app.window.slider(draw, "Color (G)", &mut g, (0.0, 255.0), 1.0)?;
-                app.window.slider(draw, "Color (B)", &mut b, (0.0, 255.0), 1.0)?;
-                app.window.slider(draw, "Power", &mut self.power, (0.0, 16.0), 0.1)?;
-                app.window.slider(draw, "Range", &mut self.range, (0.0, 16.0), 0.1)?;
-                app.window.slider(draw, "Attenuation", &mut self.attenuation, (0.0, 0.99), 0.01)?;
-                app.window.switch(draw, "Kind", &mut self.kind, &[
+                let change_r = app.view.slider(draw, "Color (R)", &mut r, (0.0, 255.0), 1.0)?.change;
+                let change_g = app.view.slider(draw, "Color (G)", &mut g, (0.0, 255.0), 1.0)?.change;
+                let change_b = app.view.slider(draw, "Color (B)", &mut b, (0.0, 255.0), 1.0)?.change;
+                let power = app.view.slider(draw, "Power", &mut self.power, (0.0, 16.0), 0.1)?.change;
+                let range = app.view.slider(draw, "Range", &mut self.range, (0.0, 16.0), 0.1)?.change;
+                let attenuation = app.view.slider(draw, "Attenuation", &mut self.attenuation, (0.0, 0.99), 0.01)?.change;
+                app.view.switch(draw, "Kind", &mut self.kind, &[
                     LightKind::Normal,
                     LightKind::FlickerA,
                     LightKind::FlickerB,
@@ -302,10 +300,21 @@ impl Entity for Light {
                     LightKind::PulseE,
                 ])?;
 
-                crate::scene::Light::set_color(&mut world.scene, *handle, Color::new(r as u8, g as u8, b as u8, 255))?;
-                crate::scene::Light::set_power(&mut world.scene, *handle, self.power)?;
-                crate::scene::Light::set_range(&mut world.scene, *handle, self.range)?;
-                crate::scene::Light::set_attenuation(&mut world.scene, *handle, self.attenuation)?;
+                if change_r || change_g || change_b {
+                    crate::scene::Light::set_color(&mut world.scene, *handle, Color::new(r as u8, g as u8, b as u8, 255))?;
+                }
+
+                if power {
+                    crate::scene::Light::set_power(&mut world.scene, *handle, self.power)?;
+                }
+
+                if range {
+                    crate::scene::Light::set_range(&mut world.scene, *handle, self.range)?;
+                }
+
+                if attenuation {
+                    crate::scene::Light::set_attenuation(&mut world.scene, *handle, self.attenuation)?;
+                }
 
                 let x_a = draw.is_key_pressed(KeyboardKey::KEY_W) || draw.is_key_pressed_repeat(KeyboardKey::KEY_W);
                 let x_b = draw.is_key_pressed(KeyboardKey::KEY_S) || draw.is_key_pressed_repeat(KeyboardKey::KEY_S);
@@ -346,7 +355,7 @@ impl Entity for Light {
             if collision.hit && collision.distance <= 8.0 {
                 if draw.is_key_pressed(KeyboardKey::KEY_Q) {
                     self.focus = true;
-                    app.window.set_device(crate::window::Device::Mouse { lock: true });
+                    app.view.set_device(crate::view::Device::Mouse { lock: true });
                     // TO-DO make this happen automatically on set_device
                     draw.enable_cursor();
                 }

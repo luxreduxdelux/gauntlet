@@ -161,10 +161,10 @@ pub struct Physical {
 }
 
 impl Physical {
-    pub const GROUP_ENTITY: Group = Group::GROUP_2;
-    pub const GROUP_ENTITY_SENSOR: Group = Group::GROUP_3;
-    pub const GROUP_GEOMETRY: Group = Group::GROUP_4;
-    pub const GROUP_GEOMETRY_SENSOR: Group = Group::GROUP_5;
+    pub const GROUP_ENTITY: Group = Group::GROUP_1;
+    pub const GROUP_ENTITY_SENSOR: Group = Group::GROUP_2;
+    pub const GROUP_GEOMETRY: Group = Group::GROUP_3;
+    pub const GROUP_GEOMETRY_SENSOR: Group = Group::GROUP_4;
 
     /// Run a tick in the physical simulation.
     pub fn tick(&mut self) {

@@ -76,8 +76,6 @@ pub struct Asset<'a> {
 }
 
 impl<'a> Asset<'a> {
-    const ANIMATION_BASE_FRAME_RATE: i32 = 60;
-
     /// Create a new model.
     pub fn set_model(
         &mut self,
@@ -101,7 +99,6 @@ impl<'a> Asset<'a> {
             for (i, path) in texture.iter().enumerate() {
                 let texture = self.set_texture(context, &format!("data/{path}"))?;
 
-                println!("set {i} texture");
                 material[i + 1].maps_mut()[MaterialMapIndex::MATERIAL_MAP_ALBEDO as usize]
                     .texture = **texture;
                 //material[i].get_albedo().set_texture(texture);

@@ -50,9 +50,9 @@
 
 use crate::app::*;
 use crate::entity::implementation::*;
+use crate::helper::*;
 use crate::physical::*;
 use crate::scene::View;
-use crate::utility::*;
 use crate::world::*;
 
 //================================================================
@@ -126,7 +126,7 @@ impl Entity for Door {
         world.scene.set_model(context, "data/video/door_a.glb")?;
         world.scene.set_model(context, "data/video/door_b.glb")?;
 
-        self.view = View::new(&mut world.scene, self.point, self.angle)?;
+        self.view = View::attach(&mut world.scene, self.point, self.angle)?;
 
         Ok(())
     }
@@ -143,7 +143,7 @@ impl Entity for Door {
 
         let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
 
-        let color = if app.user.debug_draw_entity {
+        let color = if app.user.debug.draw_entity {
             Color::new(255, 255, 255, 33)
         } else {
             Color::WHITE
@@ -169,7 +169,7 @@ impl Entity for Door {
             color,
         );
 
-        if app.user.debug_draw_entity {
+        if app.user.debug.draw_entity {
             draw.draw_cube_v(
                 self.point,
                 (Self::CUBOID_SCALE + Vector3::new(0.0, 0.0, 2.0)) * 0.5,

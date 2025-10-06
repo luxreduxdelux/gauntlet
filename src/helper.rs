@@ -55,7 +55,6 @@ use crate::world::*;
 
 //================================================================
 
-use rapier3d::control::CharacterCollision;
 use rapier3d::control::KinematicCharacterController;
 use rapier3d::prelude::ColliderHandle;
 use raylib::prelude::*;
@@ -113,7 +112,6 @@ impl Animation {
                         match event {
                             crate::asset::AnimationEvent::Print { data } => println!("{data}"),
                             crate::asset::AnimationEvent::Sound { path } => {
-                                println!("{delta} -> {path}");
                                 (*wrl).scene.asset.get_sound(path)?.sound.play();
                             }
                             crate::asset::AnimationEvent::Custom(data) => {
@@ -216,6 +214,98 @@ impl Animation {
         */
 
         todo!()
+    }
+}
+
+//================================================================
+
+pub struct Direction {
+    /// "X", or forward vector.
+    pub x: Vector3,
+    /// "Y", or up vector.
+    pub y: Vector3,
+    /// "Z", or right vector.
+    pub z: Vector3,
+}
+
+impl Direction {
+    pub fn draw_debug(
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        point: Vector3,
+        angle: Vector3,
+    ) {
+        let direction = Self::new_from_angle(&angle);
+
+        draw.draw_ray(Ray::new(point, direction.x), Color::RED);
+        draw.draw_ray(Ray::new(point, direction.y), Color::GREEN);
+        draw.draw_ray(Ray::new(point, direction.z), Color::BLUE);
+    }
+
+    pub fn new_from_angle(angle: &Vector3) -> Self {
+        // Convert to radian.
+        let angle = Vector3::new(
+            angle.x.to_radians(),
+            angle.y.to_radians(),
+            angle.z.to_radians(),
+        );
+
+        // Forward.
+        let x = Vector3::new(
+            angle.y.cos() * angle.x.sin(),
+            -angle.y.sin(),
+            angle.y.cos() * angle.x.cos(),
+        );
+
+        // Up.
+        let y = Vector3::new(
+            angle.y.sin() * angle.x.sin(),
+            angle.y.cos(),
+            angle.y.sin() * angle.x.cos(),
+        );
+
+        // TO-DO There's probably a better way to do this.
+        let y = vector_3_rotate_by_axis_angle(y, x, angle.z);
+
+        // Right.
+        let z = Vector3::new(angle.x.cos(), 0.0, -angle.x.sin());
+
+        Self { x, y, z }
+    }
+}
+
+//================================================================
+
+#[derive(Default)]
+pub struct Target {
+    pub point: Vector3,
+    pub angle: Vector3,
+    pub scale: f32,
+}
+
+impl Target {
+    /// Blending speed for "point".
+    const POINT_SPEED: f32 = 16.0;
+    /// Blending speed for "angle".
+    const ANGLE_SPEED: f32 = 16.0;
+    /// Blending speed for "scale".
+    const SCALE_SPEED: f32 = 16.0;
+
+    /// Create a new target.
+    pub fn new(point: Vector3, angle: Vector3, scale: f32) -> Self {
+        Self {
+            point,
+            angle,
+            scale,
+        }
+    }
+
+    /// Blend this target's data to another target's data.
+    pub fn blend(&mut self, handle: &RaylibHandle, target: &Target) {
+        let frame = handle.get_frame_time();
+
+        self.point += (target.point - self.point) * frame * Self::POINT_SPEED;
+        self.angle += (target.angle - self.angle) * frame * Self::ANGLE_SPEED;
+        self.scale += (target.scale - self.scale) * frame * Self::SCALE_SPEED;
     }
 }
 
@@ -327,8 +417,6 @@ pub fn movement_walk(
     Ok(())
 }
 
-//================================================================
-
 pub fn draw_model_transform(
     draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
     model: &mut AssetModel,
@@ -341,90 +429,12 @@ pub fn draw_model_transform(
     model.model.transform = raylib::math::Matrix::identity().into();
 }
 
-pub struct Direction {
-    pub x: Vector3,
-    pub y: Vector3,
-    pub z: Vector3,
-}
-
-impl Direction {
-    pub fn draw_debug(
-        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        point: Vector3,
-        angle: Vector3,
-    ) {
-        let direction = Self::new_from_angle(&angle);
-
-        draw.draw_ray(Ray::new(point, direction.x), Color::RED);
-        draw.draw_ray(Ray::new(point, direction.y), Color::GREEN);
-        draw.draw_ray(Ray::new(point, direction.z), Color::BLUE);
-    }
-
-    pub fn new_from_angle(angle: &Vector3) -> Self {
-        // convert to radian.
-        let angle = Vector3::new(
-            angle.x.to_radians(),
-            angle.y.to_radians(),
-            angle.z.to_radians(),
-        );
-
-        // forward.
-        let x = Vector3::new(
-            angle.y.cos() * angle.x.sin(),
-            -angle.y.sin(),
-            angle.y.cos() * angle.x.cos(),
-        );
-
-        // up.
-        let y = Vector3::new(
-            angle.y.sin() * angle.x.sin(),
-            angle.y.cos(),
-            angle.y.sin() * angle.x.cos(),
-        );
-
-        // there's probably a better way to do this.
-        let y = vector_3_rotate_by_axis_angle(y, x, angle.z);
-
-        // right.
-        let z = Vector3::new(angle.x.cos(), 0.0, -angle.x.sin());
-
-        Self { x, y, z }
-    }
-}
-
-#[derive(Default)]
-pub struct View {
-    pub point: Vector3,
-    pub angle: Vector3,
-    pub scale: f32,
-}
-
-impl View {
-    const BLEND_POINT: f32 = 16.0;
-    const BLEND_ANGLE: f32 = 16.0;
-    const BLEND_SCALE: f32 = 16.0;
-
-    pub fn new(point: Vector3, angle: Vector3, scale: f32) -> Self {
-        Self {
-            point,
-            angle,
-            scale,
-        }
-    }
-
-    pub fn blend(&mut self, handle: &RaylibHandle, view: &View) {
-        let frame = handle.get_frame_time();
-
-        self.point += (view.point - self.point) * frame * Self::BLEND_POINT;
-        self.angle += (view.angle - self.angle) * frame * Self::BLEND_ANGLE;
-        self.scale += (view.scale - self.scale) * frame * Self::BLEND_SCALE;
-    }
-}
-
+/// Calculate linear interpolation from "a" to "b" over "time".
 pub fn interpolate(a: f32, b: f32, time: f32) -> f32 {
     a + (b - a) * time
 }
 
+/// Calculate an ease in-out cubic value.
 pub fn ease_in_out_cubic(x: f32) -> f32 {
     if x < 0.5 {
         4.0 * x * x * x
@@ -433,136 +443,22 @@ pub fn ease_in_out_cubic(x: f32) -> f32 {
     }
 }
 
-/// Decomposes a transformation matrix into translation, rotation (quaternion), and scale,
-/// removing shear (same algorithm and numeric stabilizations as the original C code).
-pub fn matrix_decompose(mat: &Matrix) -> (Vector3, Quaternion, Vector3) {
-    let eps: f32 = 1e-9;
-
-    // Extract translation
-    let translation = Vector3 {
-        x: mat.m12,
-        y: mat.m13,
-        z: mat.m14,
-    };
-
-    // Matrix Columns - rotation will be extracted into here.
-    // Note: this matches the C code where matColumns[0] = { m0, m4, m8 } etc.
-    let mut mat_columns = [
-        Vector3 {
-            x: mat.m0,
-            y: mat.m4,
-            z: mat.m8,
-        },
-        Vector3 {
-            x: mat.m1,
-            y: mat.m5,
-            z: mat.m9,
-        },
-        Vector3 {
-            x: mat.m2,
-            y: mat.m6,
-            z: mat.m10,
-        },
-    ];
-
-    // Shear parameters XY, XZ, YZ (extracted and ignored)
-    let mut shear = [0.0f32; 3];
-
-    // Normalized scale parameters
-    let mut scl = Vector3::default();
-
-    // Max-normalizing helps numerical stability
-    let mut stabilizer = eps;
-    for i in 0..3 {
-        stabilizer = stabilizer.max(mat_columns[i].x.abs());
-        stabilizer = stabilizer.max(mat_columns[i].y.abs());
-        stabilizer = stabilizer.max(mat_columns[i].z.abs());
-    }
-
-    mat_columns[0] = mat_columns[0].scale_by(1.0 / stabilizer);
-    mat_columns[1] = mat_columns[1].scale_by(1.0 / stabilizer);
-    mat_columns[2] = mat_columns[2].scale_by(1.0 / stabilizer);
-
-    // X scale
-    scl.x = mat_columns[0].length();
-    if scl.x > eps {
-        mat_columns[0] = mat_columns[0].scale_by(1.0 / scl.x);
-    }
-
-    // Compute XY shear and make col2 orthogonal
-    shear[0] = mat_columns[0].dot(mat_columns[1]);
-    mat_columns[1] -= mat_columns[0].scale_by(shear[0]);
-
-    // Y scale
-    scl.y = mat_columns[1].length();
-    if scl.y > eps {
-        mat_columns[1] = mat_columns[1].scale_by(1.0 / scl.y);
-        shear[0] /= scl.y; // Correct XY shear
-    }
-
-    // Compute XZ and YZ shears and make col3 orthogonal
-    shear[1] = mat_columns[0].dot(mat_columns[2]);
-    mat_columns[2] -= mat_columns[0].scale_by(shear[1]);
-    shear[2] = mat_columns[1].dot(mat_columns[2]);
-    mat_columns[2] -= mat_columns[1].scale_by(shear[2]);
-
-    // Z scale
-    scl.z = mat_columns[2].length();
-    if scl.z > eps {
-        mat_columns[2] = mat_columns[2].scale_by(1.0 / scl.z);
-        shear[1] /= scl.z; // Correct XZ shear
-        shear[2] /= scl.z; // Correct YZ shear
-    }
-
-    // Ensure proper handedness (SO(3)) by enforcing determinant = +1
-    let cp = mat_columns[1].cross(mat_columns[2]);
-    if mat_columns[0].dot(cp) < 0.0 {
-        scl = -scl;
-        mat_columns[0] = -mat_columns[0];
-        mat_columns[1] = -mat_columns[1];
-        mat_columns[2] = -mat_columns[2];
-    }
-
-    // Set scale (rescale by stabilizer to reverse normalization)
-    let scale = scl.scale_by(stabilizer);
-
-    // Build rotation matrix from orthonormal columns (matching C's construction)
-    let rotation_matrix = Matrix {
-        m0: mat_columns[0].x,
-        m1: mat_columns[0].y,
-        m2: mat_columns[0].z,
-        m3: 0.0,
-        m4: mat_columns[1].x,
-        m5: mat_columns[1].y,
-        m6: mat_columns[1].z,
-        m7: 0.0,
-        m8: mat_columns[2].x,
-        m9: mat_columns[2].y,
-        m10: mat_columns[2].z,
-        m11: 0.0,
-        m12: 0.0,
-        m13: 0.0,
-        m14: 0.0,
-        m15: 1.0,
-    };
-
-    let rotation = Vector4::from_matrix(rotation_matrix);
-
-    (translation, rotation, scale)
-}
-
+/// Get the percentage from a range.
 pub fn percentage_from_value(input: f32, min: f32, max: f32) -> f32 {
     (input - min) / (max - min)
 }
 
+/// Get the value from a range.
 pub fn value_from_percentage(input: f32, min: f32, max: f32) -> f32 {
     min + (max - min) * input
 }
 
+/// Snap an input value to a grid.
 pub fn snap_to_grid(input: f32, grid: f32) -> f32 {
     (input / grid).floor() * grid
 }
 
+/// Rotate a Vector3 by an axis angle.
 pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f32) -> Vector3 {
     // port of raymath's function of the same name.
 
@@ -587,6 +483,7 @@ pub fn vector_3_rotate_by_axis_angle(value: Vector3, axis: Vector3, mut angle: f
     value + wv + wwv
 }
 
+/// Calculate the sound fall-off over distance and pan relative to a camera.
 pub fn calculate_distance_pan(camera: Camera3D, point: Vector3, range: f32) -> (f32, f32) {
     let distance = (point - camera.position).length();
     let distance = (1.0 - (distance / range)).clamp(0.0, 1.0);
