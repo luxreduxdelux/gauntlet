@@ -48,10 +48,69 @@
 * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-pub mod door;
-pub mod implementation;
-pub mod light;
-pub mod particle;
-pub mod path;
-pub mod player;
-pub mod weapon;
+use crate::app::*;
+use crate::entity::implementation::*;
+use crate::world::*;
+
+//================================================================
+
+use raylib::prelude::*;
+use serde::{Deserialize, Serialize};
+
+//================================================================
+
+#[derive(Serialize, Deserialize)]
+pub struct Base {
+    #[serde(skip)]
+    info: EntityInfo,
+}
+
+#[typetag::serde]
+impl Entity for Base {
+    fn get_info(&self) -> &EntityInfo {
+        &self.info
+    }
+    fn get_info_mutable(&mut self) -> &mut EntityInfo {
+        &mut self.info
+    }
+
+    /// Initialization code.
+    fn create(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    // 3D render frame logic.
+    fn draw_3d(
+        &mut self,
+        app: &mut App,
+        draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    // 2D render frame logic.
+    fn draw_2d(
+        &mut self,
+        app: &mut App,
+        draw: &mut RaylibMode2D<'_, RaylibDrawHandle<'_>>,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    // Game tick frame logic.
+    fn tick(
+        &mut self,
+        app: &mut App,
+        context: &mut Context,
+        world: &mut World,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}

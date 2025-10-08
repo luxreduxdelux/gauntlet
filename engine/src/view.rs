@@ -956,7 +956,7 @@ enum LoggerKind {
 impl LoggerKind {
     fn color(&self) -> Color {
         match self {
-            Self::History => Color::new(127, 127, 127, 255),
+            Self::History => Color::new(192, 192, 192, 255),
             Self::Command => Color::new(255, 255, 255, 255),
             Self::Warning => Color::new(255, 127, 0, 255),
             Self::Failure => Color::new(255, 0, 0, 255),
@@ -1332,15 +1332,27 @@ impl Logger {
         Ok(())
     }
 
-    fn reset(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+    fn new(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
         *app = App::default();
         app.initialize(context)?;
 
         Ok(())
     }
 
-    fn reset_world(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
+    fn new_world(app: &mut App, context: &mut Context, _: Vec<&str>) -> anyhow::Result<()> {
         app.new_world(context)?;
+
+        Ok(())
+    }
+
+    fn new_level(app: &mut App, context: &mut Context, token: Vec<&str>) -> anyhow::Result<()> {
+        if let Some(token) = token.get(1) {
+            app.new_level(context, token)?;
+        } else {
+            app.view
+                .logger
+                .print_failure("Usage: new_level {map folder name}");
+        }
 
         Ok(())
     }
@@ -1377,8 +1389,9 @@ impl Default for Logger {
         Self::register_command(&mut command, "find",            "Find a command by sub-string.",       Self::find);
         Self::register_command(&mut command, "clear",           "Clear logger history.",               Self::clear);
         Self::register_command(&mut command, "close",           "Close Gauntlet Complex.",             Self::close);
-        Self::register_command(&mut command, "reset",           "Reset the app state.",                Self::reset);
-        Self::register_command(&mut command, "reset_world",     "Reset the world state.",              Self::reset_world);
+        Self::register_command(&mut command, "new",             "Reset the app state.",                Self::new);
+        Self::register_command(&mut command, "new_world",       "Reset the world state.",              Self::new_world);
+        Self::register_command(&mut command, "new_level",       "Load a new level.",                   Self::new_level);
         Self::register_command(&mut command, "draw_physical",   "Draw the world physical simulation.", Self::draw_physical);
         Self::register_command(&mut command, "draw_entity",     "Draw point entity.",                  Self::draw_entity);
         Self::register_command(&mut command, "draw_frame_rate", "Draw the frame rate.",                Self::draw_frame_rate);

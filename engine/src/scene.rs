@@ -61,6 +61,15 @@ use raylib::prelude::*;
 
 //================================================================
 
+/*
+hashmap where key is model path and value is transform list.
+
+*/
+
+struct Draw {
+    matrix: raylib::math::Matrix,
+}
+
 /// Scene manager.
 pub struct Scene<'a> {
     pub asset: Asset<'a>,
@@ -72,8 +81,9 @@ pub struct Scene<'a> {
     light_list: Vec<Light>,
     room_list: Vec<Room>,
     // TO-DO make setter for this.
-    pub view_list: Vec<View>,
+    view_list: Vec<View>,
     path_list: Vec<Path>,
+    draw_list: HashMap<String, Vec<raylib::math::Matrix>>,
     particle_list: Vec<Particle>,
     pub physical: Physical,
     pub room_rigid: Option<RigidBodyHandle>,
@@ -81,6 +91,24 @@ pub struct Scene<'a> {
 }
 
 impl<'a> Scene<'a> {
+    pub fn draw_model(
+        &mut self,
+        path: &str,
+        point: Vector3,
+        angle: (Vector3, f32),
+        scale: Vector3,
+    ) -> anyhow::Result<()> {
+        let point = raylib::math::Matrix::translate(point.x, point.y, point.z);
+        let scale = raylib::math::Matrix::scale(scale.x, scale.y, scale.z);
+        let angle = raylib::math::Matrix::rotate(angle.0, angle.1.to_radians());
+        let matrix = (scale * angle) * point;
+
+        let entry = self.draw_list.entry(path.to_string()).or_default();
+        entry.push(matrix);
+
+        Ok(())
+    }
+
     pub fn initialize(&mut self, app: &App, context: &mut Context) -> anyhow::Result<()> {
         self.texture = Some(context.handle.load_render_texture(
             &context.thread,
@@ -102,8 +130,12 @@ impl<'a> Scene<'a> {
             Some("data/shader/light.fs"),
         )?;
 
+        light.locs_mut()[ShaderLocationIndex::SHADER_LOC_MATRIX_MVP as usize] =
+            light.get_shader_location("mvp");
         light.locs_mut()[ShaderLocationIndex::SHADER_LOC_VECTOR_VIEW as usize] =
             light.get_shader_location("viewPos");
+        light.locs_mut()[ShaderLocationIndex::SHADER_LOC_MATRIX_MODEL as usize] =
+            light.get_shader_location_attribute("instanceTransform");
 
         light.set_shader_value(
             light.get_shader_location("ambient"),
@@ -299,19 +331,39 @@ impl<'a> Scene<'a> {
                     draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
                 }
             } else if let Some(room) = Room::active_index(&*scn, self.camera_3d.position) {
-                Room::traverse(
-                    room,
-                    &mut draw,
-                    &self.view_list,
-                    &mut self.room_list,
-                    &mut self.asset,
-                    true,
-                );
+                Room::traverse(&mut *scn, &mut draw, room, true);
             }
         }
 
         for particle in &mut self.particle_list {
             particle.draw_3d(&mut draw, &self.camera_3d, &mut self.asset)?;
+        }
+
+        for (model, matrix) in &mut self.draw_list {
+            if !matrix.is_empty() {
+                let model = self.asset.get_model(model)?;
+
+                for (i, mesh) in model.model.meshes().iter().enumerate() {
+                    let matrix = matrix
+                        .iter()
+                        .map(|f| f.into())
+                        .collect::<Vec<ffi::Matrix>>();
+
+                    unsafe {
+                        let material_mesh = *model.model.meshMaterial.wrapping_add(i);
+                        let material_data = &model.model.materials()[material_mesh as usize];
+
+                        ffi::DrawMeshInstanced(
+                            *mesh.as_ref(),
+                            **material_data,
+                            matrix.as_ptr(),
+                            matrix.len() as i32,
+                        )
+                    }
+                }
+
+                matrix.clear();
+            }
         }
 
         call(&mut draw)
@@ -402,6 +454,7 @@ impl<'a> Default for Scene<'a> {
             room_list: Default::default(),
             view_list: Default::default(),
             path_list: Default::default(),
+            draw_list: Default::default(),
             particle_list: Default::default(),
             room_rigid: Default::default(),
             physical: Default::default(),
@@ -415,15 +468,15 @@ impl<'a> Default for Scene<'a> {
 /// A room in the scene, which can only be drawn if one view node bound to it is visible.
 #[derive(Default, Debug, Clone)]
 pub struct Room {
-    pub point: Vector3,
-    pub angle: Vector3,
-    pub scale: Vector3,
-    pub bound: BoundingBox,
-    pub model: String,
-    pub view: Vec<usize>,
-    pub path: Vec<usize>,
-    pub visible: bool,
-    pub visit: bool,
+    point: Vector3,
+    angle: Vector3,
+    scale: Vector3,
+    bound: BoundingBox,
+    model: String,
+    view: Vec<usize>,
+    path: Vec<usize>,
+    visible: bool,
+    visit: bool,
 }
 
 impl<'a> Room {
@@ -528,14 +581,13 @@ impl<'a> Room {
 
     // Recursively draw each room.
     fn traverse(
-        room_index: usize,
+        scene: &mut Scene,
         draw: &mut RaylibMode3D<'_, RaylibTextureMode<'_, RaylibDrawHandle<'_>>>,
-        view_list: &[View],
-        room_list: &mut [Room],
-        asset: &mut Asset<'a>,
+        room_index: usize,
         inside: bool,
     ) {
-        let current_room = &mut room_list[room_index];
+        let scn = scene as *mut Scene;
+        let current_room = &mut scene.room_list[room_index];
 
         if current_room.visit {
             return;
@@ -543,17 +595,23 @@ impl<'a> Room {
 
         current_room.visit = true;
 
-        if current_room.is_visible(view_list) || inside {
+        if current_room.is_visible(&scene.view_list) || inside {
             current_room.visible = true;
 
-            let model = asset.get_model(&current_room.model).unwrap();
-            draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
+            (unsafe { &mut *scn }).draw_model(
+                &current_room.model,
+                Vector3::zero(),
+                (Vector3::zero(), 0.0),
+                Vector3::one(),
+            );
+
+            //draw.draw_model(&model.model, Vector3::zero(), 1.0, Color::WHITE);
 
             let c_r_view = current_room.view.clone();
 
             for view in &c_r_view {
-                for room in &view_list[*view].room {
-                    Self::traverse(*room, draw, view_list, room_list, asset, false);
+                for room in &(unsafe { &*scn }).view_list[*view].room {
+                    Self::traverse(scene, draw, *room, false);
                 }
             }
         } else {
@@ -582,10 +640,10 @@ impl<'a> Room {
 /// A view portal, which will determine the visibility of each room bound to it.
 #[derive(Default, Debug, Clone)]
 pub struct View {
-    pub point: Vector3,
-    pub angle: Vector3,
-    pub visible: bool,
-    pub room: Vec<usize>,
+    point: Vector3,
+    angle: Vector3,
+    visible: bool,
+    room: Vec<usize>,
 }
 
 impl View {
@@ -601,6 +659,12 @@ impl View {
         });
 
         Ok(index)
+    }
+
+    /// Set the visibility of this view portal.
+    pub fn set_visible(scene: &mut Scene, index: usize, visible: bool) {
+        let view = &mut scene.view_list[index];
+        view.visible = visible;
     }
 }
 

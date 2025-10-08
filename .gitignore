@@ -3,7 +3,7 @@
 debug/
 target/
 data/
-definition/
+info/
 gauntlet
 user.json
 panic_*

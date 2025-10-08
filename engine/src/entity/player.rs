@@ -59,6 +59,7 @@ use crate::helper::*;
 use crate::physical::*;
 use crate::user::*;
 use crate::world::*;
+use engine_macro::Meta;
 
 //================================================================
 
@@ -70,7 +71,8 @@ use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, Meta)]
+#[info("Player.", 0.25, 0.50, 0.25)]
 pub struct Player {
     pub point: Vector3,
     pub angle: Vector3,
@@ -99,7 +101,7 @@ pub struct Player {
 impl Player {
     const ANGLE_MIN: f32 = -90.0;
     const ANGLE_MAX: f32 = 90.00;
-    const CUBOID_SCALE: Vector3 = Vector3::new(0.25, 0.5, 0.25);
+    const CUBOID_SCALE: Vector3 = Vector3::new(0.25, 0.50, 0.25);
 }
 
 #[typetag::serde]

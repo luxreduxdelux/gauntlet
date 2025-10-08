@@ -109,6 +109,39 @@ impl<'a> World<'a> {
         Ok(world)
     }
 
+    /// Create a new world (with a given level).
+    pub fn new_level(app: &mut App, context: &mut Context, path: &str) -> anyhow::Result<Self> {
+        let mut world = World::default();
+
+        world.scene.initialize(app, context)?;
+
+        if app.user.tutorial {
+            let level = Level::new(&format!("data/level/{path}/{path}.json"))?;
+
+            for model in &level.level {
+                Room::attach(
+                    &mut world.scene,
+                    context,
+                    &format!("data/level/{path}/{model}"),
+                )?;
+            }
+
+            world.fuse_level(level);
+        }
+
+        let wrl = &mut world as *mut Self;
+        let ctx = context as *mut Context;
+
+        for (i, entity) in &mut world.entity_list {
+            entity.get_info_mutable().index = *i;
+            entity.create(app, unsafe { &mut *ctx }, unsafe { &mut *wrl })?;
+        }
+
+        world.scene.link()?;
+
+        Ok(world)
+    }
+
     pub fn main(
         &mut self,
         app: &mut App,

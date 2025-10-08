@@ -174,8 +174,8 @@ pub struct Light {
     point: Vector3,
     angle: Vector3,
     //mode: LightType,
-    #[field("The light kind for this light source.", "Normal",
-        "Normal",   "Normal",
+    #[field("Kind", "The light kind for this light source.", "Normal",
+        "Normal",   "Normal flicker type.",
         "FlickerA", "FlickerA",
         "FlickerB", "FlickerB",
         "FlickerC", "FlickerC",
@@ -189,7 +189,7 @@ pub struct Light {
         "PulseE",   "PulseE"
     )]
     kind: LightKind,
-    #[field("The light color for this light source.", 255, 255, 255, 255)]
+    #[field("Color", "The light color for this light source.", 255, 255, 255)]
     color: Color,
     #[serde(skip)]
     active: bool,

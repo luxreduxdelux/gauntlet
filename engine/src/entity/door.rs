@@ -54,6 +54,7 @@ use crate::helper::*;
 use crate::physical::*;
 use crate::scene::View;
 use crate::world::*;
+use engine_macro::Meta;
 
 //================================================================
 
@@ -63,7 +64,8 @@ use serde::{Deserialize, Serialize};
 
 //================================================================
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Meta)]
+#[info("Door.", 1.2, 1.2, 0.2)]
 pub struct Door {
     point: Vector3,
     angle: Vector3,
@@ -141,6 +143,7 @@ impl Entity for Door {
         let point_a = self.point + direction.z * ease_in_out_cubic(self.scale) * 1.00;
         let point_b = self.point - direction.z * ease_in_out_cubic(self.scale) * 1.35;
 
+        /*
         let model_a = world.scene.asset.get_model("data/video/door_a.glb")?;
 
         let color = if app.user.debug.draw_entity {
@@ -167,6 +170,21 @@ impl Entity for Door {
             self.angle.x,
             Vector3::one(),
             color,
+        );
+        */
+
+        world.scene.draw_model(
+            "data/video/door_a.glb",
+            point_a,
+            (direction.y, self.angle.x),
+            Vector3::one(),
+        );
+
+        world.scene.draw_model(
+            "data/video/door_b.glb",
+            point_b,
+            (direction.y, self.angle.x),
+            Vector3::one(),
         );
 
         if app.user.debug.draw_entity {
@@ -205,8 +223,7 @@ impl Entity for Door {
 
         self.scale = self.scale.clamp(0.0, 1.0);
 
-        let view = &mut world.scene.view_list[self.view];
-        view.visible = self.scale > 0.0;
+        View::set_visible(&mut world.scene, self.view, self.scale > 0.0);
 
         let direction = Direction::new_from_angle(&self.angle);
         let point_a = direction.z * ease_in_out_cubic(self.scale) * 1.00 * -1.0;

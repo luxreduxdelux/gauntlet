@@ -151,6 +151,20 @@ impl<'a> App<'a> {
 
         Ok(())
     }
+
+    pub fn new_level(&mut self, context: &mut Context, path: &str) -> anyhow::Result<()> {
+        match World::new_level(self, context, path) {
+            Ok(world) => {
+                Layout::set_layout(self, &mut context.handle, None);
+                self.world = Some(world);
+            }
+            Err(error) => {
+                self.view.logger.print_failure(&format!("Error: {error:?}"));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 //================================================================

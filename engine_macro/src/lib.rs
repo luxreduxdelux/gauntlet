@@ -51,6 +51,7 @@
 use proc_macro::TokenStream;
 use serde::Serialize;
 use std::collections::HashMap;
+use syn::LitFloat;
 use syn::LitInt;
 use syn::LitStr;
 use syn::{
@@ -62,20 +63,23 @@ use syn::{DeriveInput, parse_macro_input};
 //================================================================
 
 #[derive(Serialize)]
-struct Entity(HashMap<String, EntityField>);
+struct Entity {
+    info: Option<EntityInfo>,
+    data: HashMap<String, EntityField>,
+}
 
 impl Entity {
-    const DEFINITION_PATH: &str = "engine_macro/definition";
+    const INFO_PATH: &str = "engine_macro/info";
 
-    fn write(name: &str, data: HashMap<String, EntityField>) {
-        let entity = Entity(data);
+    fn write(name: &str, info: Option<EntityInfo>, data: HashMap<String, EntityField>) {
+        let entity = Entity { info, data };
         let entity = serde_json::to_string_pretty(&entity).unwrap();
 
-        if !std::fs::exists(Self::DEFINITION_PATH).unwrap() {
-            std::fs::create_dir(Self::DEFINITION_PATH).unwrap();
+        if !std::fs::exists(Self::INFO_PATH).unwrap() {
+            std::fs::create_dir(Self::INFO_PATH).unwrap();
         }
 
-        std::fs::write(format!("{}/{name}.json", Self::DEFINITION_PATH), entity).unwrap();
+        std::fs::write(format!("{}/{name}.json", Self::INFO_PATH), entity).unwrap();
     }
 
     fn parse_field(
@@ -91,6 +95,7 @@ impl Entity {
                 entity_data.insert(
                     field_name.to_string(),
                     EntityField::Object {
+                        name: field.name.value(),
                         info: field.info.value(),
                     },
                 );
@@ -102,6 +107,7 @@ impl Entity {
                     entity_data.insert(
                         field_name.to_string(),
                         EntityField::Boolean {
+                            name: field.name.value(),
                             info: field.info.value(),
                             data: data.value(),
                         },
@@ -115,6 +121,7 @@ impl Entity {
                     entity_data.insert(
                         field_name.to_string(),
                         EntityField::Integer {
+                            name: field.name.value(),
                             info: field.info.value(),
                             data: data.base10_digits().parse().unwrap(),
                         },
@@ -128,6 +135,7 @@ impl Entity {
                     entity_data.insert(
                         field_name.to_string(),
                         EntityField::Decimal {
+                            name: field.name.value(),
                             info: field.info.value(),
                             data: data.base10_digits().parse().unwrap(),
                         },
@@ -141,6 +149,7 @@ impl Entity {
                     entity_data.insert(
                         field_name.to_string(),
                         EntityField::String {
+                            name: field.name.value(),
                             info: field.info.value(),
                             data: data.value(),
                         },
@@ -153,12 +162,12 @@ impl Entity {
                 entity_data.insert(
                     field_name.to_string(),
                     EntityField::Color {
+                        name: field.name.value(),
                         info: field.info.value(),
                         data: (
                             field.r.base10_digits().parse().unwrap(),
                             field.g.base10_digits().parse().unwrap(),
                             field.b.base10_digits().parse().unwrap(),
-                            field.a.base10_digits().parse().unwrap(),
                         ),
                     },
                 );
@@ -175,6 +184,7 @@ impl Entity {
                 entity_data.insert(
                     field_name.to_string(),
                     EntityField::Enumerator {
+                        name: field.name.value(),
                         info: field.info.value(),
                         data: field.data.value(),
                         pick,
@@ -187,34 +197,84 @@ impl Entity {
 
 //================================================================
 
+struct Info {
+    text: LitStr,
+    scale: Option<FieldVector3>,
+}
+
+impl Parse for Info {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let text = input.parse()?;
+
+        let scale = if input.parse::<syn::token::Comma>().is_ok() {
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        Ok(Self { text, scale })
+    }
+}
+
+//================================================================
+
 struct Field {
+    name: LitStr,
     info: LitStr,
     data: Lit,
 }
 
 impl Parse for Field {
     fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
         let info = input.parse()?;
 
         input.parse::<syn::token::Comma>()?;
         let data = input.parse()?;
 
-        Ok(Self { info, data })
+        Ok(Self { name, info, data })
+    }
+}
+
+//================================================================
+
+struct FieldVector3 {
+    x: LitFloat,
+    y: LitFloat,
+    z: LitFloat,
+}
+
+impl Parse for FieldVector3 {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let x = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
+        let y = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
+        let z = input.parse()?;
+
+        Ok(Self { x, y, z })
     }
 }
 
 //================================================================
 
 struct FieldColor {
+    name: LitStr,
     info: LitStr,
     r: LitInt,
     g: LitInt,
     b: LitInt,
-    a: LitInt,
 }
 
 impl Parse for FieldColor {
     fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
         let info = input.parse()?;
 
         input.parse::<syn::token::Comma>()?;
@@ -226,16 +286,20 @@ impl Parse for FieldColor {
         input.parse::<syn::token::Comma>()?;
         let b = input.parse()?;
 
-        input.parse::<syn::token::Comma>()?;
-        let a = input.parse()?;
-
-        Ok(Self { info, r, g, b, a })
+        Ok(Self {
+            name,
+            info,
+            r,
+            g,
+            b,
+        })
     }
 }
 
 //================================================================
 
 struct FieldEnumerator {
+    name: LitStr,
     info: LitStr,
     data: LitStr,
     pick: Vec<(LitStr, LitStr)>,
@@ -245,6 +309,9 @@ impl Parse for FieldEnumerator {
     fn parse(input: ParseStream) -> Result<Self> {
         let mut pick = Vec::default();
 
+        let name = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
         let info = input.parse()?;
 
         input.parse::<syn::token::Comma>()?;
@@ -258,21 +325,30 @@ impl Parse for FieldEnumerator {
             pick.push((name, info));
         }
 
-        Ok(Self { info, data, pick })
+        Ok(Self {
+            name,
+            info,
+            data,
+            pick,
+        })
     }
 }
 
 //================================================================
 
 struct FieldObject {
+    name: LitStr,
     info: LitStr,
 }
 
 impl Parse for FieldObject {
     fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+
+        input.parse::<syn::token::Comma>()?;
         let info = input.parse()?;
 
-        Ok(Self { info })
+        Ok(Self { name, info })
     }
 }
 
@@ -282,29 +358,36 @@ impl Parse for FieldObject {
 #[serde(tag = "type")]
 enum EntityField {
     Object {
+        name: String,
         info: String,
     },
     Boolean {
+        name: String,
         info: String,
         data: bool,
     },
     Integer {
+        name: String,
         info: String,
         data: i32,
     },
     Decimal {
+        name: String,
         info: String,
         data: f32,
     },
     String {
+        name: String,
         info: String,
         data: String,
     },
     Color {
+        name: String,
         info: String,
-        data: (u8, u8, u8, u8),
+        data: (u8, u8, u8),
     },
     Enumerator {
+        name: String,
         info: String,
         data: String,
         pick: Vec<(String, String)>,
@@ -313,22 +396,61 @@ enum EntityField {
 
 //================================================================
 
-#[proc_macro_derive(Meta, attributes(field))]
+#[derive(Serialize)]
+struct EntityInfo {
+    text: String,
+    scale: Option<(f32, f32, f32)>,
+}
+
+impl From<Info> for EntityInfo {
+    fn from(value: Info) -> Self {
+        let scale = if let Some(scale) = value.scale {
+            Some((
+                scale.x.base10_parse().unwrap(),
+                scale.y.base10_parse().unwrap(),
+                scale.z.base10_parse().unwrap(),
+            ))
+        } else {
+            None
+        };
+
+        Self {
+            text: value.text.value(),
+            scale,
+        }
+    }
+}
+
+//================================================================
+
+#[proc_macro_derive(Meta, attributes(info, field))]
 pub fn derive_meta(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
 
+    //std::fs::write("debug.txt", format!("{:#?}", input));
+
     let entity_name = input.ident.to_string();
+    let mut entity_info = None;
     let mut entity_data: HashMap<String, EntityField> = HashMap::default();
 
     if let syn::Data::Struct(data_struct) = input.data
         && let syn::Fields::Named(fields_named) = &data_struct.fields
     {
+        for attribute in input.attrs {
+            if attribute.path().is_ident("info") {
+                let info: Info = attribute.parse_args().unwrap();
+                entity_info = Some(info.into());
+            }
+        }
+
         // For each field in the structure...
         for field in &fields_named.named {
             // For each attribute in the structure...
             for attribute in &field.attrs {
                 // Check if it's the entity field attribute.
-                if attribute.path().is_ident("field") {
+                let path = attribute.path();
+
+                if path.is_ident("field") {
                     // Try getting the field name and type.
                     if let Some(ident) = &field.ident {
                         let field_name = ident.to_string();
@@ -348,7 +470,7 @@ pub fn derive_meta(item: TokenStream) -> TokenStream {
         }
     }
 
-    Entity::write(&entity_name, entity_data);
+    Entity::write(&entity_name, entity_info, entity_data);
 
     TokenStream::new()
 }
